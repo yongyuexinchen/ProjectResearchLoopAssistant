@@ -21,7 +21,7 @@ from app.db.models import (
 )
 from app.db.session import get_session, get_worker_session_factory
 from app.engine.langgraph_runner import stream_run_graph_events
-from app.engine.runner import enqueue_run, resume_run
+from app.engine.runner import enqueue_run
 from app.schemas.run import (
     AnalysisPackageRead,
     AnalysisRunRead,
@@ -169,21 +169,14 @@ def resume_existing_run(project_id: str, run_id: str, session: Session = Depends
     project = get_project_or_404(session, project_id)
     ensure_project_has_no_active_job(session, project)
     run = get_run_or_404(session, project_id, run_id)
+    if run.status != "paused_for_input":
+        raise HTTPException(status_code=409, detail="Only paused runs can be resumed")
     previous_job = workflow_job(session, run.id)
-    if previous_job is not None:
-        if run.status != "paused_for_input":
-            raise HTTPException(status_code=409, detail="Only paused runs can be resumed")
-        run.status = project.status = "queued"
-        run.resume_count += 1
-        payload = {**previous_job.payload_json, "resume_count": run.resume_count}
-        job = create_run_job(session, project.id, run.id, "resume", payload=payload)
-        record_run_event(session, project.id, run.id, "run_resume_queued", {"job_id": job.id, "status": "queued"})
-        session.commit()
-        return build_analysis_package(session, run.id)
-    try:
-        resume_run(session, project, run)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    run.status = project.status = "queued"
+    run.resume_count += 1
+    payload = {**(previous_job.payload_json if previous_job else {}), "resume_count": run.resume_count}
+    job = create_run_job(session, project.id, run.id, "resume", payload=payload)
+    record_run_event(session, project.id, run.id, "run_resume_queued", {"job_id": job.id, "status": "queued"})
     session.commit()
     return build_analysis_package(session, run.id)
 

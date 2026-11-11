@@ -298,6 +298,7 @@ def is_test_file(relative_path: str) -> bool:
         or "test" in parts
         or name.startswith("test_")
         or name.endswith("_test.py")
+        or name.endswith("_test.go")
         or ".test." in name
         or ".spec." in name
     )

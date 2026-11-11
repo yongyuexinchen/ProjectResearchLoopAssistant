@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import AnalysisRun, Project, RunJob, utc_now
@@ -159,6 +159,47 @@ def mark_job_failed(job: RunJob, error: str) -> None:
     job.status = "failed"
     job.last_error = error
     clear_job_lock(job)
+
+
+def finalize_owned_job(
+    session: Session,
+    *,
+    job_id: str,
+    worker_id: str,
+    attempt_count: int,
+    status: str,
+    error: str | None = None,
+) -> bool:
+    """Atomically finish a job only if this worker still owns the same attempt.
+
+    Old workers must not overwrite a newer worker's lease after a stale-job
+    recovery. The conditional UPDATE is the fencing point; run/project changes
+    may only happen when it updates exactly one row.
+    """
+
+    if status not in {"succeeded", "failed", "cancelled"}:
+        raise ValueError("Unsupported final job status")
+    now = utc_now()
+    result = session.execute(
+        update(RunJob)
+        .where(
+            RunJob.id == job_id,
+            RunJob.status == "running",
+            RunJob.locked_by == worker_id,
+            RunJob.attempt_count == attempt_count,
+        )
+        .values(
+            status=status,
+            last_error=error,
+            locked_by=None,
+            locked_at=None,
+            locked_until=None,
+            heartbeat_at=None,
+            next_run_at=None,
+            updated_at=now,
+        )
+    )
+    return result.rowcount == 1
 
 
 def mark_job_cancelled(job: RunJob) -> None:

@@ -1,4 +1,5 @@
 from tests.test_runs_api import build_client, create_collected_project, enqueue_and_process_run
+from app.workers.run_worker import run_one_job
 
 
 def test_missing_goal_pauses_with_langgraph_interrupt_metadata(tmp_path):
@@ -29,7 +30,11 @@ def test_resume_uses_same_thread_after_answer(tmp_path):
     )
     response = client.post(f"/projects/{project['id']}/runs/{first_package['run']['id']}/resume")
     assert response.status_code == 200, response.text
-    resumed = response.json()
+    assert response.json()["run"]["status"] == "queued"
+    assert run_one_job() is True
+    resumed = client.get(
+        f"/projects/{project['id']}/runs/{first_package['run']['id']}"
+    ).json()
 
     assert resumed["run"]["thread_id"] == thread_id
     assert resumed["run"]["resume_count"] == 1

@@ -42,6 +42,30 @@ def test_sqlalchemy_checkpointer_put_get_and_list():
         session_iter.close()
 
 
+def test_sqlalchemy_checkpointer_keeps_special_and_normal_writes_and_replaces_special():
+    session_iter = open_test_session()
+    session = next(session_iter)
+    try:
+        saver = SqlAlchemyCheckpointSaver(session)
+        config = {"configurable": {"thread_id": "thread-3", "checkpoint_ns": ""}}
+        checkpoint = {
+            "v": 1, "id": "checkpoint-3", "ts": "2026-07-01T00:00:00+00:00",
+            "channel_values": {}, "channel_versions": {}, "versions_seen": {}, "pending_sends": [],
+        }
+        returned = saver.put(config, checkpoint, {}, {})
+        saver.put_writes(returned, [("__error__", "old failure")], "task-1")
+        saver.put_writes(returned, [("score", {"overall_score": 93})], "task-1")
+        saver.put_writes(returned, [("__error__", "new failure")], "task-1")
+        loaded = saver.get_tuple(returned)
+
+        assert loaded is not None
+        assert ("task-1", "__error__", "new failure") in loaded.pending_writes
+        assert ("task-1", "score", {"overall_score": 93}) in loaded.pending_writes
+        assert sum(1 for item in loaded.pending_writes if item[1] == "__error__") == 1
+    finally:
+        session_iter.close()
+
+
 def test_sqlalchemy_checkpointer_put_writes_round_trip():
     session_iter = open_test_session()
     session = next(session_iter)

@@ -115,6 +115,9 @@ def validate_llm_report_sections(payload: Any, *, allowed_evidence_refs: set[str
                 }
             )
 
+    if not normalized_sections:
+        messages.append("sections must include at least one evidence-backed section")
+
     accepted = not messages
     normalized = {"executive_summary": executive_summary, "sections": normalized_sections} if accepted else None
     return LLMReportValidation(accepted=accepted, normalized=normalized, messages=messages)

@@ -274,23 +274,32 @@ def persist_analysis_artifacts(
         if existing_answered is not None:
             persisted_questions.append(
                 {
+                    "id": existing_answered.id,
+                    "prompt": existing_answered.prompt,
                     "status": existing_answered.status,
                     "impact": existing_answered.impact,
+                    "answer_text": existing_answered.answer_text,
                 }
             )
             continue
-        session.add(
-            Question(
-                project_id=project.id,
-                run_id=run.id,
-                prompt=question["prompt"],
-                reason=question["reason"],
-                impact=impact,
-                status=question.get("status", "open"),
-                metadata_json=metadata,
-            )
+        question_row = Question(
+            project_id=project.id,
+            run_id=run.id,
+            prompt=question["prompt"],
+            reason=question["reason"],
+            impact=impact,
+            status=question.get("status", "open"),
+            metadata_json=metadata,
         )
-        persisted_questions.append({"status": question.get("status", "open"), "impact": impact})
+        session.add(question_row)
+        session.flush()
+        persisted_questions.append({
+            "id": question_row.id,
+            "prompt": question_row.prompt,
+            "status": question_row.status,
+            "impact": impact,
+            "answer_text": question_row.answer_text,
+        })
 
     persisted_recommendations: list[dict] = []
     for recommendation in analysis["recommendations"]:

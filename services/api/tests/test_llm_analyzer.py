@@ -14,6 +14,7 @@ def valid_llm_payload():
                 "summary": "Evidence summary",
                 "evidence_type": "llm_observation",
                 "confidence": 80,
+                "derived_from": ["evidence:source"],
             }
         ],
         "findings": [
@@ -264,6 +265,16 @@ def test_validate_llm_analysis_output_rejects_deterministic_evidence_client_ref(
     )
 
 
+def test_validate_llm_analysis_output_rejects_llm_evidence_without_collected_ancestor():
+    payload = valid_llm_payload()
+    payload["evidence"][0].pop("derived_from")
+
+    result = validate_llm_analysis_output(payload, {"evidence:source"})
+
+    assert result.accepted is False
+    assert any("derived_from" in message for message in result.validation["messages"])
+
+
 def test_validate_llm_analysis_output_rejects_duplicate_llm_evidence_client_refs():
     payload = valid_llm_payload()
     payload["evidence"].append(
@@ -272,6 +283,7 @@ def test_validate_llm_analysis_output_rejects_duplicate_llm_evidence_client_refs
             "title": "Duplicate evidence",
             "summary": "Duplicate evidence summary",
             "evidence_type": "llm_observation",
+            "derived_from": ["evidence:source"],
         }
     )
 
@@ -289,6 +301,7 @@ def test_validate_llm_analysis_output_accepts_unique_llm_evidence_client_refs():
             "title": "Second evidence",
             "summary": "Second evidence summary",
             "evidence_type": "llm_observation",
+            "derived_from": ["evidence:source"],
         }
     )
     payload["findings"][0]["evidence_refs"].append("llm:second-evidence")
@@ -308,12 +321,14 @@ def test_validate_llm_analysis_output_allows_known_and_defined_llm_evidence_refs
                 "title": "Derived finding evidence",
                 "summary": "Derived finding evidence summary",
                 "evidence_type": "llm_observation",
+                "derived_from": ["evidence:source"],
             },
             {
                 "client_ref": "llm:risk",
                 "title": "Derived risk evidence",
                 "summary": "Derived risk evidence summary",
                 "evidence_type": "llm_observation",
+                "derived_from": ["evidence:source"],
             },
         ]
     )

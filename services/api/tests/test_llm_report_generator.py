@@ -178,6 +178,16 @@ def test_validator_rejects_unknown_evidence_ref():
     assert any("unknown evidence ref" in message for message in result.messages)
 
 
+def test_validator_rejects_zero_evidence_summary_without_a_section():
+    result = validate_llm_report_sections(
+        {"executive_summary": "生产已部署且全部测试通过。", "sections": []},
+        allowed_evidence_refs={"evidence-1"},
+    )
+
+    assert result.accepted is False
+    assert "evidence-backed section" in " ".join(result.messages)
+
+
 def test_validator_rejects_missing_or_blank_executive_summary():
     for payload in (
         {"sections": [{"heading": "Finding", "body": "Body", "evidence_refs": ["evidence-1"]}]},

@@ -49,6 +49,8 @@ Project Research Loop Assistant 是一个只读的工程调研工作台：输入
 - 架构图按运行保存，支持整图拖动、鼠标位置缩放、全屏、适应画布、1:1、键盘操作
 - 单张架构图可重新生成；只更新选中图，不重新扫描仓库、不调用模型
 - 新增源码函数/调用位置图：Python AST 与 JS/TS/TSX Tree-sitter 静态索引，保存函数、语句分类、调用行号、源码 hash；报告在线/Markdown/PDF 使用同一份 run 快照
+- Worker job 收尾按 owner + attempt 原子条件更新，旧 Worker 不能覆盖新租约；普通 run 和 workflow 的 resume 都进入 durable job
+- checkpointer 遵循 LangGraph 特殊 channel 的保留负索引/覆盖语义；评分节点用输入稳定键去重，崩溃恢复不重复写评分轨迹
 
 ### 证据与安全边界
 
@@ -57,7 +59,7 @@ Project Research Loop Assistant 是一个只读的工程调研工作台：输入
 - 采集快照、代码库地图和资料包绑定到本次 run；历史报告不会读取后续 run 的新资料（旧版无 run_id 的数据有受控兼容回退）
 - 网页采集默认只允许公网 IP，逐跳复核 redirect；有响应字节上限；内网资料需要显式开启 `WEB_ALLOW_PRIVATE_HOSTS`
 - 发现和风险必须引用已落库证据
-- LLM 输出必须通过结构校验和 evidence id 校验；失败时回退到确定性报告
+- LLM 输出必须通过结构校验和 evidence id 校验；新增 LLM 派生证据必须用 derived_from 指向已采集证据；智能报告摘要必须伴随至少一个已校验证据段
 - LLM 补充问题降级为 advisory，不单独阻塞自动任务；确定性高影响问题仍会暂停
 
 ## 3. 当前实现结构
@@ -90,7 +92,7 @@ Project Research Loop Assistant 是一个只读的工程调研工作台：输入
 
 最后一轮本地验证：
 
-- 后端：`411 passed, 2 skipped`
+- 后端：`421 passed, 2 skipped`
 - 前端：19 项测试通过
 - TypeScript：`npx tsc --noEmit` 通过
 - 生产构建：`npm run build` 通过

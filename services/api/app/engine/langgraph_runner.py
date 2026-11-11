@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from contextvars import ContextVar
 from dataclasses import asdict
@@ -7,6 +8,7 @@ from typing import Any, Callable, Generator, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.context.builder import build_analysis_context
@@ -323,7 +325,8 @@ def llm_analyze_sources_node(state: LoopGraphState) -> dict[str, Any]:
             "content": (
                 "你是 Loop Engineering 的智能分析增强节点。只输出一个 JSON 对象，不要使用 Markdown。"
                 "只能基于用户提供的上下文和已有证据，不要编造证据、文件、指标或外部事实。"
-                "引用已有证据时必须使用现有 client_ref；如果需要新增派生证据，client_ref 必须以 llm: 开头。"
+                "引用已有证据时必须使用现有 client_ref；如果需要新增派生证据，client_ref 必须以 llm: 开头，"
+                "并提供 derived_from 数组，只能引用上下文中已有的非 llm 证据。"
                 f"当前调研方式是「{profile_label}」，核心问题：{core_question}。"
                 "findings、risks 和 recommendations 必须围绕该核心问题补充，不要输出与档位无关的通用结论。"
             ),
@@ -545,6 +548,7 @@ def build_llm_analyzer_prompt(context: dict[str, Any], analysis: dict[str, Any])
                     "summary": "string",
                     "evidence_type": "llm_analysis",
                     "confidence": 0,
+                    "derived_from": ["collected evidence client_ref"],
                     "metadata": {},
                 }
             ],
@@ -621,9 +625,55 @@ def update_analysis_node(state: LoopGraphState) -> dict[str, Any]:
     return {"persisted": persisted}
 
 
+def verification_key(state: LoopGraphState) -> str:
+    """Stable key for replay-safe scoring; a changed answer/input yields a new key."""
+
+    context = state.get("context", {})
+    persisted = state.get("persisted", {})
+    payload = {
+        "snapshots": sorted(str(item.get("id")) for item in context.get("snapshots", []) if isinstance(item, dict)),
+        "codebase_maps": sorted(str(item.get("id")) for item in context.get("codebase_maps", []) if isinstance(item, dict)),
+        "evidence": sorted(str(item.get("id")) for item in persisted.get("evidence", []) if isinstance(item, dict)),
+        "findings": sorted(str(item.get("id")) for item in persisted.get("findings", []) if isinstance(item, dict)),
+        "risks": sorted(str(item.get("id")) for item in persisted.get("risks", []) if isinstance(item, dict)),
+        "questions": sorted(
+            f"{item.get('id')}:{item.get('status')}:{item.get('answer_text') or ''}"
+            for item in persisted.get("questions", []) if isinstance(item, dict)
+        ),
+        "recommendations": sorted(str(item.get("id")) for item in persisted.get("recommendations", []) if isinstance(item, dict)),
+    }
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def score_from_row(row: QualityScore) -> dict[str, Any]:
+    return {
+        "overall_score": row.overall_score,
+        "structure_completeness": row.structure_completeness,
+        "evidence_coverage": row.evidence_coverage,
+        "codebase_coverage": row.codebase_coverage,
+        "risk_transparency": row.risk_transparency,
+        "question_resolution": row.question_resolution,
+        "recommendation_confidence": row.recommendation_confidence,
+        "score_delta": row.score_delta,
+        "reasons": row.reasons_json,
+        "next_actions": row.next_actions_json,
+        "metadata": row.metadata_json,
+    }
+
+
 def verify_package_node(state: LoopGraphState) -> dict[str, Any]:
     session = current_session()
     project, run = load_project_run(session, state)
+    key = verification_key(state)
+    existing = next(
+        (
+            row for row in session.scalars(select(QualityScore).where(QualityScore.run_id == run.id)).all()
+            if isinstance(row.metadata_json, dict) and row.metadata_json.get("verification_key") == key
+        ),
+        None,
+    )
+    if existing is not None:
+        return {"score": score_from_row(existing)}
     previous_score = latest_previous_score(session, run)
     score = score_analysis_package(
         snapshots=state["context"]["snapshots"],
@@ -645,6 +695,8 @@ def verify_package_node(state: LoopGraphState) -> dict[str, Any]:
         f"总体得分为 {score['overall_score']}。",
         node_metadata("verify_package"),
     )
+    score_metadata = dict(score.get("metadata") or {})
+    score_metadata["verification_key"] = key
     session.add(
         QualityScore(
             project_id=project.id,
@@ -660,7 +712,7 @@ def verify_package_node(state: LoopGraphState) -> dict[str, Any]:
             score_delta=score["score_delta"],
             reasons_json=score["reasons"],
             next_actions_json=score["next_actions"],
-            metadata_json=score.get("metadata", {}),
+            metadata_json=score_metadata,
         )
     )
     commit_graph_step(session)

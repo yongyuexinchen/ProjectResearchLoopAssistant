@@ -1,7 +1,27 @@
 from pathlib import Path
 
-from app.reports.project_brief import build_project_brief, top_level_modules
-from app.tools.code_scan_tools import infer_entrypoints, scan_codebase
+from app.reports.project_brief import ProjectBrief, build_project_brief, top_level_modules
+from app.reports.renderer import render_docs_operations_gaps
+from app.tools.code_scan_tools import infer_entrypoints, is_test_file, scan_codebase
+
+
+def test_go_standard_test_files_are_classified_as_tests():
+    assert is_test_file("pkg/hello_test.go") is True
+    assert is_test_file("pkg/hello.go") is False
+
+
+def test_sensitive_env_example_is_reported_as_present_but_not_collected():
+    inventory = {
+        "snapshots": [],
+        "codebase_maps": [{
+            "file_tree": [],
+            "skipped_items_json": [{"path": ".env.example", "reason": "sensitive_path"}],
+        }],
+    }
+    lines = render_docs_operations_gaps({}, inventory, ProjectBrief())
+
+    assert any("环境变量样例路径存在" in line and ".env.example" in line for line in lines)
+    assert not any("未发现环境变量样例" in line for line in lines)
 
 
 def test_scan_detects_nextjs_entrypoints_and_skips_generated_files(tmp_path: Path):

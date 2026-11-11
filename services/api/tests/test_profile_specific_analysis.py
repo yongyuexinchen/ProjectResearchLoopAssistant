@@ -1,4 +1,6 @@
 from app.engine.analyzer import analyze_context
+from app.engine.profile_analysis import build_profile_artifacts, readme_excerpt
+from app.reports.project_brief import ProjectBrief
 from app.research.profiles import get_research_profile
 
 
@@ -104,3 +106,29 @@ def test_generic_recommendation_carries_profile_deliverable():
     assert generic["summary"] == "按交付验收清单完成人工复核"
     assert generic["metadata"]["profile_checklist"]
     assert generic["metadata"]["profile_section_plan"]
+
+
+def test_readme_excerpt_preserves_missing_and_blank_semantics():
+    assert readme_excerpt([{"readme_excerpt": None}, {"readme_excerpt": ""}, {"readme_excerpt": "  "}]) == []
+    assert readme_excerpt([{"readme_excerpt": "# Real README"}]) == ["# Real README"]
+
+
+def test_aggregate_profile_finding_references_all_codebase_maps():
+    inventory = {
+        "snapshots": [],
+        "codebase_maps": [
+            {"file_tree": [{"path": "src/a.py", "kind": "file"}], "entrypoint_files": []},
+            {"file_tree": [{"path": "lib/b.js", "kind": "file"}], "entrypoint_files": []},
+        ],
+    }
+    result = build_profile_artifacts(
+        profile_key="architecture_understanding",
+        project={"name": "multi"},
+        brief=ProjectBrief(modules=[("a", 1), ("b", 1)]),
+        inventory=inventory,
+        refs={"codebase": ["e1", "e2"], "readme": []},
+        existing_risk_titles=set(),
+    )
+
+    finding = next(item for item in result["findings"] if item["title"] == "模块边界线索")
+    assert finding["evidence_refs"] == ["e1", "e2"]

@@ -25,6 +25,22 @@ def test_malformed_python_is_still_skipped_without_aborting_class_scan(tmp_path)
     assert graph is None
 
 
+def test_class_diagram_keeps_same_named_classes_in_different_files_distinct(tmp_path):
+    (tmp_path / "a.py").write_text("class Config:\n    def a(self):\n        return 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("class Config:\n    def b(self):\n        return 2\n", encoding="utf-8")
+
+    graph = build_class_diagram(tmp_path, {"file_tree": [
+        {"path": "a.py", "kind": "file"}, {"path": "b.py", "kind": "file"},
+    ]})
+
+    assert graph is not None
+    configs = [node for node in graph.nodes if node.label == "Config"]
+    assert len(configs) == 2
+    assert len({node.id for node in configs}) == 2
+    assert {node.path for node in configs} == {"a.py", "b.py"}
+    assert not graph.edges
+
+
 def test_import_scan_preserves_python_first_line_import_after_utf8_bom(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "storage").mkdir()

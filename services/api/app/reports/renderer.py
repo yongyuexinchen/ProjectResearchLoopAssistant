@@ -830,11 +830,11 @@ def render_test_config_complexity(package: dict[str, Any], inventory: dict[str, 
         f"- 配置文件：{join_values(configs) if configs else '未发现配置文件'}",
         f"- 依赖清单：{join_values(dependencies) if dependencies else '未发现依赖清单'}",
         f"- 技术栈：{join_values(stack)}",
-        "- 复杂度判断：",
-        f"  - 回归成本：{'低（有测试基线）' if tests else '高（没有测试基线，任何改动都需要手工回归）'}",
-        f"  - 配置成本：{'中（需要同步修改多个配置）' if len(configs) > 3 else '低（配置面较小）'}",
-        f"  - 依赖成本：{'中（依赖数量较多，升级需验证兼容性）' if len(stack) > 4 else '低（依赖面较小）'}",
-        "- 注意：静态扫描只能看到测试文件数量，无法判断覆盖率和测试质量。",
+        "- 复杂度判断（启发式，不等于实际改造工时）：",
+        f"  - 回归成本：{'待确认（发现测试文件，但未验证覆盖率或是否覆盖改造点）' if tests else '高（没有测试基线，任何改动都需要手工回归）'}",
+        f"  - 配置成本：{'中（需要同步修改多个配置，需人工确认）' if len(configs) > 3 else '低（配置面较小，需人工确认）'}",
+        f"  - 依赖成本：{'中（依赖数量较多，升级需验证兼容性）' if len(stack) > 4 else '低（依赖面较小，需人工确认）'}",
+        "- 注意：静态扫描只能看到测试文件数量，无法判断覆盖率、测试质量或真实改造成本。",
     ]
     return lines
 
@@ -1099,10 +1099,18 @@ def render_docs_operations_gaps(package: dict[str, Any], inventory: dict[str, An
     else:
         lines.append(f"- 部署配置：{join_values([path for path in configs if 'docker' in path.lower()])}（仍需确认镜像来源和环境变量）。")
     env_files = [path for path in all_file_paths(inventory) if ".env" in path.lower()]
-    if not env_files:
+    skipped_env = [
+        text(value_of(item, "path", item))
+        for codebase_map in as_list(inventory.get("codebase_maps"))
+        for item in as_list(value_of(codebase_map, "skipped_items_json", []))
+        if ".env" in text(value_of(item, "path", item)).lower()
+    ]
+    if not env_files and skipped_env:
+        lines.append(f"- 环境变量样例路径存在（{join_values(unique_values(skipped_env)[:4])}），但内容按敏感文件策略未采集；需人工确认必填项。")
+    elif not env_files:
         lines.append("- 未发现环境变量样例或配置模板：新环境部署时容易缺参数。")
     else:
-        lines.append(f"- 环境变量样例：{join_values(env_files[:4])}（仍需确认样例是否覆盖全部必填项）。")
+        lines.append(f"- 环境变量样例：{join_values(env_files[:4])}（路径存在；内容若被安全策略跳过，仍需人工确认必填项）。")
     lines.append("- 未覆盖：日志、监控、告警、备份和回滚方案，本次静态扫描无法判断，需要交付方补充运维说明。")
     for gap in brief.gaps:
         if "README" in gap or "配置" in gap or "测试" in gap:

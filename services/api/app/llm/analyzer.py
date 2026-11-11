@@ -154,6 +154,17 @@ def _validate_evidence_items(
     for index, item in _validate_items_are_objects(content, "evidence", messages):
         for field in ["client_ref", "title", "summary", "evidence_type"]:
             _validate_required_string(item, "evidence", index, field, messages)
+        derived_from = item.get("derived_from")
+        if not isinstance(derived_from, list) or not derived_from or any(
+            not isinstance(ref, str) or not ref.strip() for ref in derived_from
+        ):
+            messages.append(f"evidence[{index}].derived_from must be a non-empty list of collected evidence refs")
+        else:
+            unknown = [ref for ref in derived_from if ref not in allowed_evidence_refs]
+            if unknown:
+                messages.append(
+                    f"evidence[{index}].derived_from contains unknown collected evidence refs: {', '.join(unknown)}"
+                )
         payload_ref = _validate_evidence_client_ref(
             item,
             index,

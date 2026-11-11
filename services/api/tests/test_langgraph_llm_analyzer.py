@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
@@ -55,6 +56,7 @@ def valid_fake_analyzer_payload() -> dict[str, Any]:
                 "summary": "基于已有证据补充项目结构判断，没有引入外部事实。",
                 "evidence_type": "llm_analysis",
                 "confidence": 88,
+                "derived_from": ["evidence:snapshot"],
                 "metadata": {"basis": "deterministic_analysis"},
             }
         ],
@@ -123,10 +125,14 @@ def test_llm_analyzer_accepts_valid_fake_output(tmp_path, monkeypatch):
                 f"project:{kwargs['project_id']}",
                 f"run:{kwargs['run_id']}",
             ]
+            prompt = kwargs["messages"][1]["content"]
+            refs = re.findall(r"evidence:[A-Za-z0-9:_-]+", prompt)
+            payload = valid_fake_analyzer_payload()
+            payload["evidence"][0]["derived_from"] = [refs[0]]
             return {
                 "status": "succeeded",
                 "call_id": "fake-analyzer-call",
-                "text": json.dumps(valid_fake_analyzer_payload(), ensure_ascii=False),
+                "text": json.dumps(payload, ensure_ascii=False),
                 "usage": {},
             }
 

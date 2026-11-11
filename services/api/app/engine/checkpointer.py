@@ -9,6 +9,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
+    WRITES_IDX_MAP,
     BaseCheckpointSaver,
     Checkpoint,
     CheckpointMetadata,
@@ -149,8 +150,15 @@ class SqlAlchemyCheckpointSaver(BaseCheckpointSaver[str]):
         checkpoint_id = config["configurable"]["checkpoint_id"]
         with self._write_session() as session:
             for index, (channel, value) in enumerate(writes):
-                existing = self._get_write(session, thread_id, checkpoint_ns, checkpoint_id, task_id, index)
+                write_index = WRITES_IDX_MAP.get(channel, index)
+                existing = self._get_write(session, thread_id, checkpoint_ns, checkpoint_id, task_id, write_index)
                 if existing is not None:
+                    # Special channels (error/interrupt/scheduled/resume) use
+                    # reserved negative indexes and replace an earlier value.
+                    if write_index < 0:
+                        existing.channel = channel
+                        existing.value_json = pack_checkpoint_value(value)
+                        existing.task_path = task_path
                     continue
                 session.add(
                     GraphCheckpointWrite(
@@ -158,9 +166,9 @@ class SqlAlchemyCheckpointSaver(BaseCheckpointSaver[str]):
                         checkpoint_ns=checkpoint_ns,
                         checkpoint_id=checkpoint_id,
                         task_id=task_id,
-                        write_index=index,
+                        write_index=write_index,
                         channel=channel,
-                    value_json=pack_checkpoint_value(value),
+                        value_json=pack_checkpoint_value(value),
                         task_path=task_path,
                     )
                 )

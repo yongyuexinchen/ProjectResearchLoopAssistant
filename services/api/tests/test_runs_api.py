@@ -100,10 +100,20 @@ def create_collected_project(client: TestClient, tmp_path: Path, analysis_goal: 
 def enqueue_and_process_run(client: TestClient, project_id: str) -> dict:
     enqueue_response = client.post(f"/projects/{project_id}/runs")
     assert enqueue_response.status_code == 202
-    assert run_one_job() is True
     run_id = enqueue_response.json()["run"]["id"]
     package_response = client.get(f"/projects/{project_id}/runs/{run_id}")
     assert package_response.status_code == 200
+    # Tests share a worker queue across isolated in-memory databases. Drain
+    # whatever queued work is present until this project's run reaches a
+    # terminal/paused state, rather than assuming this run is the first job.
+    for _ in range(6):
+        package = package_response.json()
+        if package["run"]["status"] in {"ready_for_review", "ready_for_review_with_risks", "paused_for_input", "failed", "cancelled"}:
+            return package
+        if run_one_job() is False:
+            break
+        package_response = client.get(f"/projects/{project_id}/runs/{run_id}")
+        assert package_response.status_code == 200
     return package_response.json()
 
 
@@ -185,7 +195,11 @@ def test_missing_goal_pauses_and_resume_after_answer(tmp_path: Path):
     )
 
     assert resume_response.status_code == 200
-    resumed = resume_response.json()
+    assert resume_response.json()["run"]["status"] == "queued"
+    assert run_one_job() is True
+    resumed = client.get(
+        f"/projects/{project['id']}/runs/{first_package['run']['id']}"
+    ).json()
     assert resumed["run"]["status"] in {"ready_for_review", "ready_for_review_with_risks"}
     assert resumed["questions"][0]["status"] == "answered"
     after_counts = {

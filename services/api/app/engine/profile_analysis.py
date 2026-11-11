@@ -1,4 +1,4 @@
-"""按调研方式补充确定性的发现、风险和建议。
+﻿"""按调研方式补充确定性的发现、风险和建议。
 
 这一步不调用模型：即使模型不可用，五类调研也能得到不同的问题清单和结论骨架。
 所有新增条目都必须引用已有证据，避免把档位指令写成尚未验证的事实。
@@ -33,6 +33,7 @@ def build_profile_artifacts(
     tests = collect(codebase_maps, "test_files")
     modules = all_modules(codebase_maps)
     codebase_ref = first_ref(refs.get("codebase"))
+    codebase_refs = unique(refs.get("codebase"))
     readme_ref = first_ref(refs.get("readme")) or first_ref(refs.get("snapshot")) or codebase_ref
     primary_ref = readme_ref or codebase_ref
 
@@ -63,7 +64,7 @@ def build_profile_artifacts(
                     summary=f"建议从 {', '.join(entrypoints[:4])} 开始，先确认启动参数和主流程调用。",
                     category="onboarding",
                     confidence=82,
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     metadata={"profile": profile_key},
                 )
             )
@@ -85,7 +86,7 @@ def build_profile_artifacts(
                     summary="没有项目说明材料，新人无法从资料确认用途、启动方式和运行前提。",
                     severity="medium",
                     mitigation="先向项目方索取 README 或启动说明，再安排交接。",
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     existing=existing_risk_titles,
                     metadata={"profile": profile_key},
                 )
@@ -112,7 +113,7 @@ def build_profile_artifacts(
                     summary="顶层模块：" + "、".join(f"{name}({count})" for name, count in modules[:6]) + "。",
                     category="architecture",
                     confidence=78,
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     metadata={"profile": profile_key, "modules": [name for name, _ in modules[:6]]},
                 )
             )
@@ -126,7 +127,7 @@ def build_profile_artifacts(
                     ),
                     category="architecture",
                     confidence=76,
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     metadata={"profile": profile_key},
                 )
             )
@@ -137,7 +138,7 @@ def build_profile_artifacts(
                     summary="当前主流程和数据流来自静态依赖推断，没有日志或追踪证明真实调用链。",
                     severity="medium",
                     mitigation="用一次真实请求或启动日志抽样验证入口到核心模块的调用链。",
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     existing=existing_risk_titles,
                     metadata={"profile": profile_key},
                 )
@@ -167,7 +168,7 @@ def build_profile_artifacts(
                     ),
                     category="extension",
                     confidence=74,
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     metadata={"profile": profile_key},
                 )
             )
@@ -178,7 +179,7 @@ def build_profile_artifacts(
                     summary=f"发现 {len(tests)} 个测试文件，可作为二开回归的起点；覆盖率仍需人工确认。",
                     category="extension",
                     confidence=78,
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     metadata={"profile": profile_key},
                 )
             )
@@ -189,7 +190,7 @@ def build_profile_artifacts(
                     summary="没有自动化测试，任何改动都只能依赖手工回归，难以判断是否破坏现有行为。",
                     severity="high",
                     mitigation="先补一条可重复运行的 smoke test，再开始改核心路径。",
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     existing=existing_risk_titles,
                     metadata={"profile": profile_key},
                 )
@@ -200,7 +201,7 @@ def build_profile_artifacts(
                 summary="当前只能看到目录和依赖，无法确认模块间的真实调用、共享状态和外部副作用。",
                 severity="medium",
                 mitigation="先用 POC 隔离验证，再逐步扩大改动范围。",
-                evidence_ref=codebase_ref or primary_ref,
+                evidence_refs=codebase_refs or [primary_ref],
                 existing=existing_risk_titles,
                 metadata={"profile": profile_key},
             )
@@ -228,7 +229,7 @@ def build_profile_artifacts(
                     summary=f"可以按“项目导入 → 运行入口 → {mainline} → 测试/改造”组织课程。",
                     category="learning_path",
                     confidence=80,
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     metadata={"profile": profile_key},
                 )
             )
@@ -239,7 +240,7 @@ def build_profile_artifacts(
                     summary=f"优先用 {', '.join(entrypoints[:3])} 作为课堂讲解入口。",
                     category="teaching",
                     confidence=80,
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     metadata={"profile": profile_key},
                 )
             )
@@ -250,7 +251,7 @@ def build_profile_artifacts(
                     summary=f"发现 {len(tests)} 个测试文件，可作为练习的预期行为和判分依据。",
                     category="practice_exercise",
                     confidence=78,
-                    evidence_ref=codebase_ref or primary_ref,
+                    evidence_refs=codebase_refs or [primary_ref],
                     metadata={"profile": profile_key},
                 )
             )
@@ -279,7 +280,7 @@ def build_profile_artifacts(
                 ),
                 category="delivery_readiness",
                 confidence=84,
-                evidence_ref=codebase_ref or primary_ref,
+                evidence_refs=codebase_refs or [primary_ref],
                 metadata={"profile": profile_key, "missing": missing},
             )
         )
@@ -321,7 +322,7 @@ def build_profile_artifacts(
                         summary=summary,
                         severity=severity,
                         mitigation=mitigation,
-                        evidence_ref=codebase_ref or primary_ref,
+                        evidence_refs=codebase_refs or [primary_ref],
                         existing=existing_risk_titles,
                         metadata={"profile": profile_key},
                     )
@@ -353,16 +354,18 @@ def finding(
     summary: str,
     category: str,
     confidence: int,
-    evidence_ref: str,
+    evidence_ref: str | None = None,
+    evidence_refs: list[str] | None = None,
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
+    refs = unique([*(evidence_refs or []), *([evidence_ref] if evidence_ref else [])])
     return {
         "title": title,
         "summary": summary,
         "category": category,
         "impact_level": "medium",
         "confidence": confidence,
-        "evidence_refs": [evidence_ref],
+        "evidence_refs": refs,
         "metadata": metadata,
     }
 
@@ -373,19 +376,21 @@ def risk(
     summary: str,
     severity: str,
     mitigation: str,
-    evidence_ref: str,
+    evidence_ref: str | None = None,
+    evidence_refs: list[str] | None = None,
     existing: set[str],
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
     if title in existing:
         return {}
     existing.add(title)
+    refs = unique([*(evidence_refs or []), *([evidence_ref] if evidence_ref else [])])
     return {
         "title": title,
         "summary": summary,
         "severity": severity,
         "mitigation": mitigation,
-        "evidence_refs": [evidence_ref],
+        "evidence_refs": refs,
         "metadata": metadata,
     }
 
@@ -474,7 +479,12 @@ def entrypoints_for(codebase_maps: list[Any]) -> list[str]:
 
 
 def readme_excerpt(codebase_maps: list[Any]) -> list[str]:
-    return [str(value_of(codebase_map, "readme_excerpt", "")) for codebase_map in codebase_maps]
+    values = []
+    for codebase_map in codebase_maps:
+        value = value_of(codebase_map, "readme_excerpt", None)
+        if value is not None and str(value).strip():
+            values.append(str(value))
+    return values
 
 
 def all_modules(codebase_maps: list[Any]) -> list[tuple[str, int]]:

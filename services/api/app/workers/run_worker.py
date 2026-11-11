@@ -11,7 +11,7 @@ from app.db.models import AnalysisRun, Project, RunJob
 from app.db.session import get_worker_session_factory
 from app.engine import langgraph_runner
 from app.services.run_events import record_run_event
-from app.services.run_jobs import claim_next_job, heartbeat_job, mark_job_failed, mark_job_succeeded
+from app.services.run_jobs import claim_next_job, finalize_owned_job, heartbeat_job
 
 
 class JobLeaseLost(RuntimeError):
@@ -42,6 +42,7 @@ def run_one_job(
         project.status = run.status
         record_run_event(session, project.id, run.id, "run_started", {"status": run.status, "job_id": job.id})
         job_id = job.id
+        job_attempt = job.attempt_count
         project_id = project.id
         run_id = run.id
         thread_id = run.thread_id or f"run:{run.id}"
@@ -55,9 +56,14 @@ def run_one_job(
                 if payload.get("workflow"):
                     execute_workflow(session, project_id, run_id, thread_id, job_type, payload, guard)
                 elif job_type == "resume":
-                    guard()
-                    langgraph_runner.resume_run_graph(session, project_id, run_id, thread_id, payload)
-                    heartbeat_current_job(session_factory, job_id, worker_id, lease_seconds)
+                    for event_payload in langgraph_runner.stream_run_graph_events(
+                        session, project_id, run_id, thread_id,
+                        guard=lambda: guard(session), resume_payload=payload,
+                    ):
+                        guard()
+                        record_run_event(session, project_id, run_id, "node_completed", event_payload)
+                        session.commit()
+                        heartbeat_current_job(session_factory, job_id, worker_id, lease_seconds)
                 else:
                     for event_payload in langgraph_runner.stream_run_graph_events(
                         session, project_id, run_id, thread_id, guard=lambda: guard(session),
@@ -68,18 +74,19 @@ def run_one_job(
                         heartbeat_current_job(session_factory, job_id, worker_id, lease_seconds)
 
         with session_factory() as session:
-            job = require_job(session, job_id)
-            ensure_loaded_job_still_owned(job, worker_id)
-            heartbeat_job(job, worker_id=worker_id, lease_seconds=lease_seconds)
+            if not finalize_owned_job(
+                session, job_id=job_id, worker_id=worker_id,
+                attempt_count=job_attempt, status="succeeded",
+            ):
+                return True
             run = require_run(session, run_id)
             project = require_project(session, project_id)
-            mark_job_succeeded(job)
             record_run_event(
                 session,
                 project.id,
                 run.id,
                 "run_paused" if payload.get("workflow") and run.status == "paused_for_input" else "run_completed",
-                {"status": run.status, "turn_count": run.current_turn, "job_id": job.id},
+                {"status": run.status, "turn_count": run.current_turn, "job_id": job_id},
             )
             session.commit()
         return True
@@ -87,16 +94,17 @@ def run_one_job(
         return True
     except Exception as exc:
         with session_factory() as session:
-            job = require_job(session, job_id)
-            if job.status != "running" or job.locked_by != worker_id:
+            if not finalize_owned_job(
+                session, job_id=job_id, worker_id=worker_id,
+                attempt_count=job_attempt, status="failed", error=str(exc),
+            ):
                 return True
             run = require_run(session, run_id)
             project = require_project(session, project_id)
             run.status = "failed"
             run.stop_reason = str(exc)
             project.status = "failed"
-            mark_job_failed(job, str(exc))
-            record_run_event(session, project.id, run.id, "run_failed", {"message": str(exc), "job_id": job.id})
+            record_run_event(session, project.id, run.id, "run_failed", {"message": str(exc), "job_id": job_id})
             session.commit()
         return True
 
@@ -221,6 +229,10 @@ def execute_workflow(session, project_id, run_id, thread_id, job_type, payload, 
             session.commit()
     else:
         # The graph may already be complete when a later stage is retried.
+        # Serialize with cancel_run, which locks the project row, and only
+        # restore status while this worker still owns the job lease.
+        session.scalar(select(Project).where(Project.id == project_id).with_for_update())
+        guard()
         run.status = "ready_for_review_with_risks"
         project.status = run.status
         session.commit()

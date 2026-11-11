@@ -91,9 +91,12 @@ def build_class_diagram(root: Path | None, codebase: dict[str, Any]) -> Graph | 
 
     classes = classes[:MAX_CLASSES]
     graph = Graph(kind="uml_class", title="类图（UML）", basis="deterministic:ast + regex")
-    known = {_node_id("c", item["name"]) for item in classes}
+    class_ids = {
+        (item["path"], item["name"]): _node_id("c", f"{item['path']}::{item['name']}")
+        for item in classes
+    }
     for item in classes:
-        node_id = _node_id("c", item["name"])
+        node_id = class_ids[(item["path"], item["name"])]
         graph.nodes.append(
             GraphNode(
                 id=node_id,
@@ -107,19 +110,25 @@ def build_class_diagram(root: Path | None, codebase: dict[str, Any]) -> Graph | 
         graph.nodes[-1].__dict__["bases"] = item["bases"]
         graph.nodes[-1].__dict__["language"] = item["language"]
 
-    by_name = {item["name"]: _node_id("c", item["name"]) for item in classes}
+    by_name: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for item in classes:
+        by_name[item["name"]].append((item["path"], item["name"]))
     for item in classes:
         for base in item["bases"]:
             simple = base.split(".")[-1]
-            target = by_name.get(simple)
-            if target and target != _node_id("c", item["name"]):
-                graph.edges.append(GraphEdge(source=target, target=_node_id("c", item["name"]), label="extends"))
+            candidates = by_name.get(simple, [])
+            if len(candidates) != 1:
+                # A short-name-only inheritance lookup is ambiguous across files.
+                continue
+            target = class_ids[candidates[0]]
+            source = class_ids[(item["path"], item["name"])]
+            if target != source:
+                graph.edges.append(GraphEdge(source=target, target=source, label="extends"))
 
     graph.notes.append(f"扫描 {scanned} 个源文件，取前 {len(classes)} 个类；实线三角箭头是继承（extends）。")
     graph.notes.append("Python 用 ast 解析，JS/TS 用正则近似，动态特性（mixin、装饰器注入）不在图里。")
     if len(classes) >= MAX_CLASSES:
         graph.notes.append(f"类数量已截断到 {MAX_CLASSES} 个，避免图不可读。")
-    del known
     return graph
 
 

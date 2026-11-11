@@ -23,6 +23,8 @@ def merge_llm_analysis(analysis: dict[str, Any], llm_payload: dict[str, Any]) ->
             if not isinstance(metadata, dict):
                 metadata = {}
             metadata["source"] = "llm_analyzer"
+            if key == "evidence":
+                metadata["derived_from"] = list(appended.get("derived_from") or [])
             appended["metadata"] = metadata
             merged[key].append(appended)
 

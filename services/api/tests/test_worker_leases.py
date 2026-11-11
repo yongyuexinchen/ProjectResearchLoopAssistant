@@ -7,6 +7,7 @@ from app.db.models import AnalysisRun, Project, RunEvent, RunJob, utc_now
 from app.services.run_jobs import (
     claim_next_job,
     create_run_job,
+    finalize_owned_job,
     heartbeat_job,
     recover_stale_jobs,
 )
@@ -49,6 +50,39 @@ def test_claim_next_job_sets_lease_fields_and_excludes_other_workers():
         assert claimed.locked_until > claimed.locked_at
         assert claimed.attempt_count == 1
         assert second_claim is None
+    finally:
+        session_iter.close()
+
+
+def test_finalize_is_fenced_by_owner_and_attempt():
+    session_iter = open_test_session()
+    session = next(session_iter)
+    try:
+        project, run = create_project_and_run(session)
+        job = create_run_job(session, project.id, run.id, "start")
+        claimed = claim_next_job(session, worker_id="worker-a", queue_name="default", lease_seconds=30)
+        assert claimed is not None and job.id == claimed.id
+        attempt = claimed.attempt_count
+        # A newer worker took over the same job after stale recovery.
+        claimed.locked_by = "worker-b"
+        claimed.attempt_count = attempt + 1
+        session.flush()
+
+        assert finalize_owned_job(
+            session, job_id=job.id, worker_id="worker-a", attempt_count=attempt,
+            status="failed", error="old worker",
+        ) is False
+        session.refresh(claimed)
+        assert claimed.status == "running"
+        assert claimed.locked_by == "worker-b"
+
+        assert finalize_owned_job(
+            session, job_id=job.id, worker_id="worker-b", attempt_count=attempt + 1,
+            status="succeeded",
+        ) is True
+        session.refresh(claimed)
+        assert claimed.status == "succeeded"
+        assert claimed.locked_by is None
     finally:
         session_iter.close()
 
