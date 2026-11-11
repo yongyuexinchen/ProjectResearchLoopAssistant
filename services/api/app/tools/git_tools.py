@@ -128,7 +128,7 @@ def _remove_existing_target(target: Path) -> None:
         for name in directories:
             path = Path(root) / name
             try:
-                path.chmod(stat.S_IWRITE)
+                path.chmod(stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
             except OSError:
                 pass
     shutil.rmtree(target)
