@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app.tools.git_tools import clone_public_github_repo, ensure_child_path, repo_workspace_path
-from app.tools.web_tools import fetch_web_url
+from app.tools.web_tools import WebFetchSafetyError, fetch_web_url
 
 
 def test_fetch_web_url_extracts_title_text_and_metadata():
@@ -30,6 +30,7 @@ def test_fetch_web_url_extracts_title_text_and_metadata():
         timeout_seconds=5,
         excerpt_chars=80,
         transport=httpx.MockTransport(handler),
+        resolver=lambda host, port: ["93.184.216.34"],
     )
 
     assert result["status"] == "collected"
@@ -38,6 +39,78 @@ def test_fetch_web_url_extracts_title_text_and_metadata():
     assert "alert" not in result["content_excerpt"]
     assert result["metadata"]["content_type"].startswith("text/html")
     assert result["metadata"]["final_url"] == "https://example.com/research"
+
+
+def test_fetch_web_url_rejects_redirect_to_private_network_before_following():
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        if request.url.host == "public.example":
+            return httpx.Response(302, headers={"location": "http://127.0.0.1/private"}, request=request)
+        return httpx.Response(200, text="INTERNAL_ONLY", request=request)
+
+    def resolver(host: str, port: int) -> list[str]:
+        return ["93.184.216.34"] if host == "public.example" else ["127.0.0.1"]
+
+    with pytest.raises(WebFetchSafetyError, match="内网"):
+        fetch_web_url(
+            "https://public.example/docs",
+            timeout_seconds=5,
+            excerpt_chars=80,
+            transport=httpx.MockTransport(handler),
+            resolver=resolver,
+        )
+
+    assert requests == ["https://public.example/docs"]
+
+
+def test_fetch_web_url_rejects_private_initial_target_without_request():
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        return httpx.Response(200, text="INTERNAL_ONLY", request=request)
+
+    with pytest.raises(WebFetchSafetyError, match="内网"):
+        fetch_web_url(
+            "http://127.0.0.1:8002/private",
+            timeout_seconds=5,
+            excerpt_chars=80,
+            transport=httpx.MockTransport(handler),
+            resolver=lambda host, port: ["127.0.0.1"],
+        )
+
+    assert requests == []
+
+
+def test_fetch_web_url_stops_at_response_byte_budget():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"x" * 100, request=request)
+
+    with pytest.raises(WebFetchSafetyError, match="字节预算"):
+        fetch_web_url(
+            "https://example.com/large",
+            timeout_seconds=5,
+            excerpt_chars=10,
+            transport=httpx.MockTransport(handler),
+            max_bytes=10,
+            resolver=lambda host, port: ["93.184.216.34"],
+        )
+
+
+def test_fetch_web_url_rejects_too_many_redirects():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"location": str(request.url)}, request=request)
+
+    with pytest.raises(WebFetchSafetyError, match="重定向次数过多"):
+        fetch_web_url(
+            "https://example.com/loop",
+            timeout_seconds=5,
+            excerpt_chars=10,
+            transport=httpx.MockTransport(handler),
+            resolver=lambda host, port: ["93.184.216.34"],
+        )
 
 
 def test_repo_workspace_path_stays_under_workspace_root(tmp_path: Path):

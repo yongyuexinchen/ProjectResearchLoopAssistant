@@ -127,6 +127,10 @@ class SourceBundle(TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.id", ondelete="SET NULL"),
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="pending")
     metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -177,6 +181,10 @@ class SourceSnapshot(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.id", ondelete="SET NULL"),
+        index=True,
+    )
     source_id: Mapped[str] = mapped_column(ForeignKey("sources.id"), nullable=False, index=True)
     source_type: Mapped[str] = mapped_column(String(40), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="collected")
@@ -198,6 +206,10 @@ class CodebaseMap(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.id", ondelete="SET NULL"),
+        index=True,
+    )
     source_id: Mapped[str] = mapped_column(ForeignKey("sources.id"), nullable=False, index=True)
     root_label: Mapped[str] = mapped_column(Text, nullable=False)
     tech_stack_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)

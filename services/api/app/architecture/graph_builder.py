@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,6 +69,7 @@ class Graph:
     nodes: list[GraphNode] = field(default_factory=list)
     edges: list[GraphEdge] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -77,6 +79,7 @@ class Graph:
             "nodes": [node.__dict__ for node in self.nodes],
             "edges": [edge.__dict__ for edge in self.edges],
             "notes": list(self.notes),
+            "details": deepcopy(self.details),
         }
 
 

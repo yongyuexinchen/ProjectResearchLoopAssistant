@@ -85,6 +85,13 @@ def test_validate_web_url_rejects_ftp():
         validate_source_input("web_url", "ftp://example.com/research")
 
 
+def test_validate_web_url_rejects_invalid_ipv6_without_crashing():
+    with pytest.raises(SourceValidationError) as exc:
+        validate_source_input("web_url", "https://[::1")
+
+    assert "not a valid URL" in str(exc.value)
+
+
 def test_validate_web_url_rejects_userinfo():
     with pytest.raises(SourceValidationError):
         validate_source_input("web_url", "https://user@example.com/research")

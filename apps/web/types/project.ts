@@ -449,6 +449,29 @@ export type ArchitectureEdge = {
   weight: number;
 };
 
+export type SourceStatement = {
+  kind: string; label: string; line_start: number; line_end: number; excerpt: string;
+};
+
+export type SourceCall = {
+  expression: string; line: number; column: number; target_id: string | null;
+  resolution: "resolved" | "unresolved"; reason: string;
+};
+
+export type SourceFunction = {
+  id: string; path: string; name: string; qualified_name: string;
+  line_start: number; line_end: number; parameters: string[]; docstring: string;
+  statements: SourceStatement[]; calls: SourceCall[];
+  entrypoint: { kind: string; label: string; line: number; confidence: string } | null;
+};
+
+export type SourceIndex = {
+  version: number;
+  files: { path: string; language: string; sha256: string; line_count: number }[];
+  functions: SourceFunction[];
+  stats: Record<string, unknown>; limits: Record<string, unknown>; warnings: string[];
+};
+
 export type ArchitectureDiagram = {
   id: string;
   project_id: string;
@@ -463,12 +486,14 @@ export type ArchitectureDiagram = {
     nodes: ArchitectureNode[];
     edges: ArchitectureEdge[];
     notes: string[];
+    details?: SourceIndex | Record<string, unknown>;
   };
   stats_json: {
     nodes: number;
     edges: number;
     root_label: string | null;
     scanned_root: string | null;
+    run_id?: string | null;
   };
   created_at: string;
 };

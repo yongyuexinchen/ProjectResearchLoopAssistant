@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { WorkbenchNav } from "@/components/workbench-nav";
+import { ReportArchitectureSection } from "@/components/report-architecture-section";
 import {
   createIntelligentProjectReport,
   createProjectReport,
@@ -16,18 +17,18 @@ import {
 import { checkNameLabel, riskLabel, severityLabel, statusLabel } from "@/lib/labels";
 import type { ReportDiff, ReportSnapshot, VerifierCheck, VerifierLlmAssisted } from "@/types/project";
 
-async function generateReportAction(projectId: string) {
+async function generateReportAction(projectId: string, runId: string | null) {
   "use server";
 
-  await createProjectReport(projectId);
-  redirect(`/projects/${projectId}/report`);
+  const report = await createProjectReport(projectId, runId ? { run_id: runId } : undefined);
+  redirect(`/projects/${projectId}/report?report_id=${encodeURIComponent(report.id)}`);
 }
 
-async function generateIntelligentReportAction(projectId: string) {
+async function generateIntelligentReportAction(projectId: string, runId: string | null) {
   "use server";
 
-  await createIntelligentProjectReport(projectId);
-  redirect(`/projects/${projectId}/report`);
+  const report = await createIntelligentProjectReport(projectId, runId ? { run_id: runId } : undefined);
+  redirect(`/projects/${projectId}/report?report_id=${encodeURIComponent(report.id)}`);
 }
 
 async function reviewReportAction(projectId: string, reportId: string, formData: FormData) {
@@ -343,8 +344,8 @@ export default async function ProjectReportPage({ params, searchParams }: Projec
           : Promise.resolve({ reportDiff: null, error: null }),
       ])
     : ["", { reportDiff: null, error: null }];
-  const generateAction = generateReportAction.bind(null, id);
-  const generateIntelligentAction = generateIntelligentReportAction.bind(null, id);
+  const generateAction = generateReportAction.bind(null, id, report?.run_id ?? null);
+  const generateIntelligentAction = generateIntelligentReportAction.bind(null, id, report?.run_id ?? null);
   const reviewAction = report ? reviewReportAction.bind(null, id, report.id) : null;
   const verifier = report?.verifier_result_json ?? null;
 
@@ -410,6 +411,7 @@ export default async function ProjectReportPage({ params, searchParams }: Projec
 
       {report && verifier ? (
         <>
+          <ReportArchitectureSection verifier={verifier} projectId={id} reportId={report.id} />
           <section className="panel stack">
             <div>
               <h2>校验项</h2>

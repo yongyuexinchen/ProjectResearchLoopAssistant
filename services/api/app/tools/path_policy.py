@@ -10,6 +10,9 @@ GENERATED_OR_VENDOR_PARTS = {
     ".svelte-kit",
     ".turbo",
     ".venv",
+    ".tmp",
+    ".worktrees",
+    ".superpowers",
     "__pycache__",
     "build",
     "coverage",
@@ -64,7 +67,7 @@ def should_skip_path(path: Path, root: Path, max_file_bytes: int) -> dict | None
             "reason": "symlink",
         }
 
-    if parts & GENERATED_OR_VENDOR_PARTS:
+    if parts & GENERATED_OR_VENDOR_PARTS or any(part.startswith(".next-") for part in parts):
         return {
             "path": relative_path,
             "reason": "generated_or_vendor_path",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,10 +16,13 @@ from app.architecture.graph_builder import (
     resolve_source_root,
 )
 from app.architecture.mermaid import render_mermaid
+from app.architecture.source_flow import build_source_flow
 from app.architecture.uml import build_class_diagram, build_component_diagram, build_sequence_diagram
 from app.db.models import ArchitectureDiagram, CodebaseMap, Project
+from app.services.run_scope import scoped_collection_rows
 
 DIAGRAM_ORDER = {
+    "source_flow": -1,
     "module_map": 0,
     "uml_component": 1,
     "uml_class": 2,
@@ -53,6 +58,14 @@ def _graph_from_snapshot(snapshot: object, diagram_type: str) -> Graph:
     if not isinstance(notes, list) or not all(isinstance(note, str) for note in notes):
         raise ValueError(error)
     graph = Graph(kind=kind, title=snapshot["title"], basis=snapshot["basis"], notes=list(notes))
+    details = snapshot.get("details", {})
+    if not isinstance(details, dict):
+        raise ValueError(error)
+    if kind == "source_flow":
+        from app.architecture.source_snapshot import validate_source_details
+        if not validate_source_details(details):
+            raise ValueError(error)
+    graph.details = deepcopy(details)
     for item in nodes:
         if not isinstance(item, dict) or not all(isinstance(item.get(key), str) for key in ("id", "label", "path", "kind")):
             raise ValueError(error)
@@ -63,7 +76,8 @@ def _graph_from_snapshot(snapshot: object, diagram_type: str) -> Graph:
             raise ValueError(error)
         node = GraphNode(**{key: item[key] for key in ("id", "label", "path", "kind")},
                          file_count=item.get("file_count", 0), entrypoint=item.get("entrypoint", False))
-        node.__dict__["methods"] = list(methods)
+        if "methods" in item:
+            node.__dict__["methods"] = list(methods)
         graph.nodes.append(node)
     ids = {node.id for node in graph.nodes}
     for item in edges:
@@ -95,13 +109,10 @@ def list_diagrams(session: Session, project: Project, run_id: str | None = None)
 
 
 def generate_architecture(session: Session, project: Project, run_id: str | None = None) -> list[ArchitectureDiagram]:
-    """从已采集的代码库地图重新生成全部架构图；不读取脚本、不执行代码、不调用 LLM。"""
+    """从已采集地图和只读源码文本生成图；不执行输入代码、不调用 LLM。"""
 
-    codebase_map = session.scalar(
-        select(CodebaseMap)
-        .where(CodebaseMap.project_id == project.id)
-        .order_by(CodebaseMap.created_at.desc(), CodebaseMap.id.desc())
-    )
+    maps = scoped_collection_rows(session, CodebaseMap, project.id, run_id)
+    codebase_map = maps[-1] if maps else None
     if codebase_map is None:
         raise ValueError("还没有代码库地图，请先在「输入源」页采集本地目录或 GitHub 仓库。")
 
@@ -109,6 +120,9 @@ def generate_architecture(session: Session, project: Project, run_id: str | None
     root = resolve_source_root(session, project, source_id=codebase_map.source_id)
 
     graphs = [build_module_map(payload)]
+    source_flow = build_source_flow(root, payload)
+    if source_flow is not None:
+        graphs.insert(0, source_flow)
     dependency = build_dependency_flow(root, payload)
     if dependency is not None:
         dependency.notes.append("如果图为空，说明扫描预算内没有发现跨模块 import。")

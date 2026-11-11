@@ -106,6 +106,7 @@ LLM_API_KEY_REQUIRED=false
 
 - 仓库不会提交 `.env`、`.env.*`、`workspace/projects/`、`.tmp/`、虚拟环境和依赖目录。
 - 新环境从 `.env.example` 复制出 `.env`，只在本机填写真实密码和 API Key。
+- 网页采集默认拒绝内网/回环地址；只有明确需要内网文档时才设置 `WEB_ALLOW_PRIVATE_HOSTS=true`。
 - 提交前建议执行：
 
   ```powershell

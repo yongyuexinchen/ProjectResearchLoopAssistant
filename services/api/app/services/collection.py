@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.models import CodebaseMap, Project, Source, SourceSnapshot
+from app.db.models import CodebaseMap, Project, Source, SourceBundle, SourceBundleItem, SourceSnapshot
 from app.services.audit import record_event
 from app.tools.code_scan_tools import scan_codebase
 from app.tools.file_tools import read_local_file
@@ -39,6 +39,8 @@ def collect_project_sources(
     project: Project,
     settings: Settings,
     source_ids: set[str] | None = None,
+    *,
+    run_id: str | None = None,
 ) -> dict:
     statement = select(Source).where(Source.project_id == project.id)
     if source_ids is not None:
@@ -60,8 +62,17 @@ def collect_project_sources(
         )
         try:
             snapshot_data, codebase_data = collect_one_source(source, project, settings)
+            if run_id:
+                bundle_ids = list(session.scalars(
+                    select(SourceBundleItem.bundle_id).where(SourceBundleItem.source_id == source.id)
+                ).all())
+                for bundle in session.scalars(
+                    select(SourceBundle).where(SourceBundle.id.in_(bundle_ids), SourceBundle.run_id.is_(None))
+                ).all() if bundle_ids else []:
+                    bundle.run_id = run_id
             snapshot = SourceSnapshot(
                 project_id=project.id,
+                run_id=run_id,
                 source_id=source.id,
                 source_type=source.source_type,
                 status=snapshot_data["status"],
@@ -76,6 +87,7 @@ def collect_project_sources(
                 session.add(
                     CodebaseMap(
                         project_id=project.id,
+                        run_id=run_id,
                         source_id=source.id,
                         root_label=codebase_data["root_label"],
                         tech_stack_json=codebase_data["tech_stack"],
@@ -102,6 +114,7 @@ def collect_project_sources(
             session.add(
                 SourceSnapshot(
                     project_id=project.id,
+                    run_id=run_id,
                     source_id=source.id,
                     source_type=source.source_type,
                     status="failed",
@@ -129,6 +142,8 @@ def collect_one_source(source: Source, project: Project, settings: Settings) -> 
                 source.normalized_uri,
                 timeout_seconds=settings.web_fetch_timeout_seconds,
                 excerpt_chars=settings.source_excerpt_chars,
+                max_bytes=settings.source_max_file_bytes,
+                allow_private_hosts=settings.web_allow_private_hosts,
             ),
             None,
         )
@@ -146,6 +161,7 @@ def collect_one_source(source: Source, project: Project, settings: Settings) -> 
             Path(source.normalized_uri),
             max_file_bytes=settings.source_max_file_bytes,
             excerpt_chars=settings.source_excerpt_chars,
+            excluded_roots=[settings.workspace_root],
         )
         snapshot_data = {
             "status": "collected",
@@ -166,6 +182,7 @@ def collect_one_source(source: Source, project: Project, settings: Settings) -> 
             Path(clone_data["metadata"]["local_path"]),
             max_file_bytes=settings.source_max_file_bytes,
             excerpt_chars=settings.source_excerpt_chars,
+            excluded_roots=[settings.workspace_root],
         )
         snapshot_data = {
             **clone_data,

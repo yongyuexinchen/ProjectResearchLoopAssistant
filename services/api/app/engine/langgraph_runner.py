@@ -271,7 +271,7 @@ def load_state_node(state: LoopGraphState) -> dict[str, Any]:
 def build_context_node(state: LoopGraphState) -> dict[str, Any]:
     session = current_session()
     project, run = load_project_run(session, state)
-    context = build_analysis_context(session, project.id)
+    context = build_analysis_context(session, project.id, run_id=run.id)
     append_turn(
         session,
         run,

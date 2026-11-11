@@ -3,36 +3,20 @@ from sqlalchemy.orm import Session
 
 from app.db.models import CodebaseMap, Project, Question, SourceBundle, SourceBundleItem, SourceSnapshot
 from app.research.profiles import get_research_profile
+from app.services.run_scope import scoped_collection_rows
 
 
-def build_analysis_context(session: Session, project_id: str) -> dict:
+def build_analysis_context(session: Session, project_id: str, *, run_id: str | None = None) -> dict:
     """从已持久化事实构建上下文包，不重新读取文件或访问网络。"""
 
     project = session.get(Project, project_id)
     if project is None:
         raise ValueError("Project not found")
 
-    snapshots = list(
-        session.scalars(
-            select(SourceSnapshot)
-            .where(SourceSnapshot.project_id == project.id)
-            .order_by(SourceSnapshot.created_at.asc(), SourceSnapshot.id.asc())
-        ).all()
-    )
-    codebase_maps = list(
-        session.scalars(
-            select(CodebaseMap)
-            .where(CodebaseMap.project_id == project.id)
-            .order_by(CodebaseMap.created_at.asc(), CodebaseMap.id.asc())
-        ).all()
-    )
-    answered_questions = list(
-        session.scalars(
-            select(Question)
-            .where(Question.project_id == project.id, Question.status == "answered")
-            .order_by(Question.created_at.asc(), Question.id.asc())
-        ).all()
-    )
+    snapshots = scoped_collection_rows(session, SourceSnapshot, project.id, run_id)
+    codebase_maps = scoped_collection_rows(session, CodebaseMap, project.id, run_id)
+    bundles = scoped_collection_rows(session, SourceBundle, project.id, run_id)
+    bundle_ids = [bundle.id for bundle in bundles]
     source_bundle_rows = list(
         session.execute(
             select(
@@ -42,9 +26,16 @@ def build_analysis_context(session: Session, project_id: str) -> dict:
                 func.count(SourceBundleItem.id).label("item_count"),
             )
             .outerjoin(SourceBundleItem, SourceBundleItem.bundle_id == SourceBundle.id)
-            .where(SourceBundle.project_id == project.id)
+            .where(SourceBundle.id.in_(bundle_ids))
             .group_by(SourceBundle.id, SourceBundle.name, SourceBundle.status, SourceBundle.created_at)
             .order_by(SourceBundle.created_at.asc(), SourceBundle.id.asc())
+        ).all()
+    ) if bundle_ids else []
+    answered_questions = list(
+        session.scalars(
+            select(Question)
+            .where(Question.project_id == project.id, Question.status == "answered")
+            .order_by(Question.created_at.asc(), Question.id.asc())
         ).all()
     )
     review_feedback_questions = [

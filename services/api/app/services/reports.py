@@ -3,7 +3,7 @@ from dataclasses import asdict
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from app.db.models import (
     AnalysisRun,
@@ -18,6 +18,7 @@ from app.db.models import (
     Recommendation,
     ReportSnapshot,
     Risk,
+    RunJob,
     SourceBundle,
     SourceSnapshot,
     utc_now,
@@ -29,7 +30,9 @@ from app.research.profiles import get_research_profile
 from app.reports.llm_generator import merge_llm_report_markdown, validate_llm_report_sections
 from app.reports.project_brief import build_project_brief
 from app.reports.renderer import render_report_markdown
+from app.reports.architecture import render_architecture_markdown, snapshot_architecture_diagrams, split_architecture_chapter
 from app.services.audit import record_event
+from app.services.run_scope import scoped_collection_rows
 from app.verifiers.package import as_list, verify_analysis_package
 
 REVIEWABLE_RUN_STATUSES = {"ready_for_review", "ready_for_review_with_risks"}
@@ -58,11 +61,14 @@ def create_report_snapshot(
         raise ValueError(f"Run status `{run.status}` is not ready for report review")
 
     package = build_analysis_package(session, run)
-    inventory = build_inventory(session, project)
+    inventory = build_inventory(session, project, run_id=run.id)
     verifier_result = verify_analysis_package(package, inventory)
+    diagrams = snapshot_architecture_diagrams(session, project.id, run.id)
+    verifier_result["architecture_diagrams"] = diagrams
     profile = get_research_profile(project.research_profile)
     title = f"{project.name} · {profile.label}调研报告"
     markdown = render_report_markdown(project, package, inventory, verifier_result)
+    markdown = markdown.rstrip() + "\n\n" + render_architecture_markdown(diagrams)
     report = ReportSnapshot(
         project_id=project.id,
         run_id=run.id,
@@ -98,7 +104,7 @@ def create_intelligent_report_snapshot(
             raise LookupError("Run not found")
 
         package = build_analysis_package(session, run)
-        inventory = build_inventory(session, project)
+        inventory = build_inventory(session, project, run_id=run.id)
         evidence_ids = [
             str(evidence.id).strip()
             for evidence in package["evidence_items"]
@@ -199,8 +205,9 @@ def create_intelligent_report_snapshot(
                 for section in as_list(profile_summary.get("section_plan"))
                 if isinstance(section, dict) and section.get("heading")
             )
+        deterministic_body, architecture_chapter = split_architecture_chapter(report.markdown_content)
         enhanced_markdown = merge_llm_report_markdown(
-            report.markdown_content,
+            deterministic_body,
             validation.normalized or {},
             planned_headings=planned_headings,
         )
@@ -218,7 +225,7 @@ def create_intelligent_report_snapshot(
                 "normalized": validation.normalized,
             },
         )
-        report.markdown_content = enhanced_markdown
+        report.markdown_content = enhanced_markdown.rstrip() + "\n" + architecture_chapter
     except Exception as exc:
         try_add_llm_report_artifact(
             session,
@@ -457,6 +464,64 @@ def review_report_snapshot(
         raise ValueError(f"Unsupported review decision `{decision}`")
     review_comment = normalized_review_comment(decision, comment)
     report_status, project_status = REVIEW_STATUS_BY_DECISION[decision]
+
+    # Lock the project row so two review requests cannot both pass the active-job
+    # check and enqueue independent follow-up runs.
+    locked_project = session.scalar(
+        select(Project).where(Project.id == project.id).with_for_update()
+    )
+    if locked_project is not None:
+        project = locked_project
+    latest_run = session.scalar(
+        select(AnalysisRun)
+        .where(AnalysisRun.project_id == project.id)
+        .order_by(AnalysisRun.created_at.desc(), AnalysisRun.id.desc())
+        .limit(1)
+    )
+    active_job = session.scalar(
+        select(RunJob).where(
+            RunJob.project_id == project.id,
+            RunJob.status.in_(("queued", "running")),
+        ).order_by(RunJob.created_at.desc()).limit(1)
+    )
+    is_current_report = latest_run is not None and latest_run.id == report.run_id
+
+    if decision in FOLLOWUP_REVIEW_DECISIONS:
+        existing_feedback = [
+            question
+            for question in session.scalars(
+                select(Question).where(Question.project_id == project.id, Question.run_id == report.run_id)
+            ).all()
+            if (question.metadata_json or {}).get("source") == "report_review"
+            and (question.metadata_json or {}).get("report_id") == report.id
+            and (question.metadata_json or {}).get("decision") == decision
+        ]
+        if existing_feedback:
+            return report
+
+    if not is_current_report:
+        # Historical review must never mutate the current project's state or
+        # enqueue work against the latest run.
+        if decision in FOLLOWUP_REVIEW_DECISIONS:
+            raise ValueError("历史报告不能启动新的调研任务；请打开当前运行的最新报告再提交该评审。")
+        report.status = report_status
+        report.review_decision = decision
+        report.review_comment = review_comment
+        report.reviewed_at = utc_now()
+        record_event(
+            session,
+            event_type="report.reviewed",
+            message="Historical analysis report reviewed without changing the current run",
+            project_id=project.id,
+            payload={"report_id": report.id, "decision": decision, "historical": True},
+        )
+        return report
+
+    if active_job is not None or (latest_run is not None and latest_run.status in {"queued", "running"}):
+        raise ValueError("当前调研仍在运行，完成或取消后才能评审报告。")
+    if report.review_decision == decision and report.status == report_status:
+        return report
+
     report.status = report_status
     report.review_decision = decision
     report.review_comment = review_comment
@@ -619,29 +684,10 @@ def build_analysis_package(session: Session, run: AnalysisRun) -> dict[str, Any]
     }
 
 
-def build_inventory(session: Session, project: Project) -> dict[str, Any]:
-    snapshots = list(
-        session.scalars(
-            select(SourceSnapshot)
-            .where(SourceSnapshot.project_id == project.id)
-            .order_by(SourceSnapshot.created_at.asc(), SourceSnapshot.id.asc())
-        ).all()
-    )
-    codebase_maps = list(
-        session.scalars(
-            select(CodebaseMap)
-            .where(CodebaseMap.project_id == project.id)
-            .order_by(CodebaseMap.created_at.asc(), CodebaseMap.id.asc())
-        ).all()
-    )
-    source_bundles = list(
-        session.scalars(
-            select(SourceBundle)
-            .options(selectinload(SourceBundle.items))
-            .where(SourceBundle.project_id == project.id)
-            .order_by(SourceBundle.created_at.asc(), SourceBundle.id.asc())
-        ).all()
-    )
+def build_inventory(session: Session, project: Project, *, run_id: str | None = None) -> dict[str, Any]:
+    snapshots = scoped_collection_rows(session, SourceSnapshot, project.id, run_id)
+    codebase_maps = scoped_collection_rows(session, CodebaseMap, project.id, run_id)
+    source_bundles = scoped_collection_rows(session, SourceBundle, project.id, run_id)
     return {
         "snapshots": snapshots,
         "codebase_maps": codebase_maps,

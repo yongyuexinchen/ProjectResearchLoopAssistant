@@ -22,12 +22,16 @@ def get_architecture(project_id: str, run_id: str | None = None, session: Sessio
 @router.post("/architecture", response_model=list[ArchitectureDiagramRead], status_code=status.HTTP_201_CREATED)
 def create_architecture(project_id: str, run_id: str | None = None, session: Session = Depends(get_session)):
     project = get_project_or_404(session, project_id)
+    latest_run_id = session.scalar(select(AnalysisRun.id).where(AnalysisRun.project_id == project.id)
+        .order_by(AnalysisRun.created_at.desc(), AnalysisRun.id.desc()).limit(1))
     if run_id is not None:
         require_run(session, project, run_id)
-        latest_run_id = session.scalar(select(AnalysisRun.id).where(AnalysisRun.project_id == project.id)
-            .order_by(AnalysisRun.created_at.desc(), AnalysisRun.id.desc()).limit(1))
         if run_id != latest_run_id:
             raise HTTPException(status_code=409, detail="历史调研保留其已保存的架构图，请在当前调研中重新生成。")
+    else:
+        # Manual generation must be selectable by that run's report. Projects
+        # without any analysis run can still preview unbound diagrams.
+        run_id = latest_run_id
     try:
         rows = generate_architecture(session, project, run_id=run_id)
     except ValueError as exc:

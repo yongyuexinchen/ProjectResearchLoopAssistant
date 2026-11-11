@@ -143,6 +143,7 @@ def execute_workflow(session, project_id, run_id, thread_id, job_type, payload, 
     from app.core.config import get_settings
     from app.db.models import CodebaseMap, Source
     from app.services.collection import collect_project_sources
+    from app.services.run_scope import scoped_collection_rows
     from app.services.reports import create_intelligent_report_snapshot
     from app.services.workflow import stage_event, workflow_state
 
@@ -186,7 +187,7 @@ def execute_workflow(session, project_id, run_id, thread_id, job_type, payload, 
             sources = list(session.scalars(select(Source).where(Source.project_id == project_id)).all())
             for source in sources:
                 guard()
-                collect_project_sources(session, project, get_settings(), source_ids={source.id})
+                collect_project_sources(session, project, get_settings(), source_ids={source.id}, run_id=run_id)
                 guard()
                 session.commit()
             if not any(source.status == "collected" for source in sources):
@@ -227,8 +228,8 @@ def execute_workflow(session, project_id, run_id, thread_id, job_type, payload, 
 
     if "architecture" not in completed:
         with stage("architecture", "正在根据采集的代码生成架构图"):
-            codebase = session.scalar(select(CodebaseMap.id).where(CodebaseMap.project_id == project_id).limit(1))
-            if codebase is None:
+            codebase = scoped_collection_rows(session, CodebaseMap, project_id, run_id)
+            if not codebase:
                 warning = "输入源中没有代码库，已跳过架构图；报告仍会基于文本资料生成。"
                 stage_event(session, project_id, run_id, "architecture", "skipped", warning, warning=warning)
             else:

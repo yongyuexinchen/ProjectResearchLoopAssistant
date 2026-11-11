@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     source_max_file_bytes: int = 1_000_000
     source_excerpt_chars: int = 4_000
     web_fetch_timeout_seconds: float = 20
+    web_allow_private_hosts: bool = False
     git_clone_timeout_seconds: float = 120
     llm_provider: str = "openai-compatible"
     llm_api_key: str | None = None

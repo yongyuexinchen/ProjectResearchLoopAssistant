@@ -474,10 +474,13 @@ def extract_manifest(relative_path: str, file_path: Path) -> dict | None:
 
 
 
-def scan_codebase(root: Path, max_file_bytes: int, excerpt_chars: int) -> dict:
+def scan_codebase(root: Path, max_file_bytes: int, excerpt_chars: int,
+                  *, excluded_roots: list[Path] | None = None) -> dict:
     """扫描代码目录的结构线索；不执行脚本，不跟随 symlink。"""
 
     root = root.resolve()
+    excluded = {path.resolve() for path in (excluded_roots or [])
+                if path.resolve() != root and path.resolve().is_relative_to(root)}
     tech_stack: set[str] = set()
     dependency_files: list[str] = []
     config_files: list[str] = []
@@ -495,6 +498,9 @@ def scan_codebase(root: Path, max_file_bytes: int, excerpt_chars: int) -> dict:
         kept_dir_names: list[str] = []
         for dir_name in sorted(dir_names):
             dir_path = current_root / dir_name
+            if dir_path.resolve() in excluded:
+                skipped_items.append({"path": to_relative_posix(dir_path, root), "reason": "runtime_workspace"})
+                continue
             decision = should_skip_path(dir_path, root, max_file_bytes)
             if decision is not None:
                 skipped_items.append(decision)

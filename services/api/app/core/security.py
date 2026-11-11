@@ -36,13 +36,17 @@ def validate_source_input(source_type: str, uri: str) -> ValidatedSource:
 
 
 def _validate_web_url(uri: str) -> ValidatedSource:
-    parsed = urlparse(uri)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    try:
+        parsed = urlparse(uri)
+        hostname = parsed.hostname
+    except ValueError as exc:
+        raise SourceValidationError("web_url is not a valid URL") from exc
+    if parsed.scheme not in {"http", "https"} or not hostname:
         raise SourceValidationError("web_url must be an http or https URL")
     if parsed.username or parsed.password:
         raise SourceValidationError("web_url must not contain user credentials")
 
-    metadata = {"scheme": parsed.scheme, "host": parsed.hostname}
+    metadata = {"scheme": parsed.scheme, "host": hostname}
     try:
         port = parsed.port
     except ValueError as exc:
@@ -57,7 +61,11 @@ def _validate_web_url(uri: str) -> ValidatedSource:
 
 
 def _validate_github_repo(uri: str) -> ValidatedSource:
-    parsed = urlparse(uri)
+    try:
+        parsed = urlparse(uri)
+        hostname = parsed.hostname
+    except ValueError as exc:
+        raise SourceValidationError("github_repo is not a valid URL") from exc
     try:
         port = parsed.port
     except ValueError as exc:
@@ -66,7 +74,7 @@ def _validate_github_repo(uri: str) -> ValidatedSource:
     path_parts = [part for part in parsed.path.strip("/").split("/") if part]
     if (
         parsed.scheme != "https"
-        or parsed.hostname != "github.com"
+        or hostname != "github.com"
         or port is not None
         or parsed.username
         or parsed.password

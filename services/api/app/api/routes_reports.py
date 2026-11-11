@@ -1,3 +1,4 @@
+import copy
 import re
 from urllib.parse import quote
 
@@ -32,7 +33,7 @@ def create_report(
     project_id: str,
     payload: ReportCreate | None = Body(default=None),
     session: Session = Depends(get_session),
-) -> ReportSnapshot:
+) -> dict:
     project = get_project_or_404(session, project_id)
     try:
         report = create_report_snapshot(session, project, run_id=payload.run_id if payload else None)
@@ -42,7 +43,7 @@ def create_report(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     session.commit()
     session.refresh(report)
-    return report
+    return public_report(report)
 
 
 @router.post("/reports/intelligent", response_model=ReportSnapshotRead, status_code=status.HTTP_201_CREATED)
@@ -50,7 +51,7 @@ def create_intelligent_report(
     project_id: str,
     payload: ReportCreate | None = Body(default=None),
     session: Session = Depends(get_session),
-) -> ReportSnapshot:
+) -> dict:
     project = get_project_or_404(session, project_id)
     try:
         report = create_intelligent_report_snapshot(session, project, run_id=payload.run_id if payload else None)
@@ -60,21 +61,36 @@ def create_intelligent_report(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     session.commit()
     session.refresh(report)
-    return report
+    return public_report(report)
 
 
 @router.get("/reports/latest", response_model=ReportSnapshotRead)
-def get_latest_project_report(project_id: str, session: Session = Depends(get_session)) -> ReportSnapshot:
+def get_latest_project_report(project_id: str, session: Session = Depends(get_session)) -> dict:
     project = get_project_or_404(session, project_id)
     report = get_latest_report(session, project)
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
-    return report
+    return public_report(report)
 
 
 @router.get("/reports/{report_id}", response_model=ReportSnapshotRead)
-def get_report(project_id: str, report_id: str, session: Session = Depends(get_session)) -> ReportSnapshot:
-    return get_report_or_404(session, project_id, report_id)
+def get_report(project_id: str, report_id: str, session: Session = Depends(get_session)) -> dict:
+    return public_report(get_report_or_404(session, project_id, report_id))
+
+
+@router.get("/reports/{report_id}/source-index")
+def get_report_source_index(project_id: str, report_id: str, session: Session = Depends(get_session)) -> dict:
+    report = get_report_or_404(session, project_id, report_id)
+    diagrams = report.verifier_result_json.get("architecture_diagrams")
+    rows = []
+    for diagram in diagrams if isinstance(diagrams, list) else []:
+        if not isinstance(diagram, dict):
+            continue
+        graph = diagram.get("graph_json")
+        details = graph.get("details") if isinstance(graph, dict) else None
+        if isinstance(details, dict):
+            rows.append({"id": diagram.get("id"), "details": details})
+    return {"diagrams": rows}
 
 
 @router.get("/reports/{report_id}/markdown", response_model=ReportMarkdownRead)
@@ -87,7 +103,9 @@ def get_report_markdown(project_id: str, report_id: str, session: Session = Depe
 def export_report_pdf(project_id: str, report_id: str, session: Session = Depends(get_session)) -> Response:
     project = get_project_or_404(session, project_id)
     report = get_report_or_404(session, project_id, report_id)
-    pdf_content = render_markdown_pdf(title=report.title, markdown=report.markdown_content)
+    diagrams = report.verifier_result_json.get("architecture_diagrams")
+    pdf_content = render_markdown_pdf(title=report.title, markdown=report.markdown_content,
+        architecture_diagrams=diagrams if isinstance(diagrams, list) else None)
     filename = report_export_filename(project, report, ".pdf")
     return Response(
         content=pdf_content,
@@ -134,7 +152,7 @@ def review_report(
     report_id: str,
     payload: ReportReviewCreate,
     session: Session = Depends(get_session),
-) -> ReportSnapshot:
+) -> dict:
     project = get_project_or_404(session, project_id)
     report = get_report_or_404(session, project_id, report_id)
     try:
@@ -149,7 +167,23 @@ def review_report(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     session.commit()
     session.refresh(report)
-    return report
+    return public_report(report)
+
+
+def public_report(report: ReportSnapshot) -> dict:
+    """Return report metadata without embedding multi-megabyte source indexes."""
+
+    payload = ReportSnapshotRead.model_validate(report).model_dump()
+    verifier = copy.deepcopy(payload.get("verifier_result_json") or {})
+    diagrams = verifier.get("architecture_diagrams")
+    for diagram in diagrams if isinstance(diagrams, list) else []:
+        if not isinstance(diagram, dict):
+            continue
+        graph = diagram.get("graph_json")
+        if isinstance(graph, dict):
+            graph.pop("details", None)
+    payload["verifier_result_json"] = verifier
+    return payload
 
 
 def report_export_filename(project: Project, report: ReportSnapshot, suffix: str) -> str:

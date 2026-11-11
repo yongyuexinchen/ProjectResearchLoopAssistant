@@ -57,6 +57,8 @@ Worker: execute_workflow
 - 每个阶段完成后再进入下一阶段；已完成阶段在重试时复用。
 - 运行可以 `paused_for_input` 等待用户回答高影响问题，然后 `POST /runs/{id}/resume`。
 - Worker 用 lease/heartbeat 防止重复领取；`run_worker.py` 负责过期 job 恢复。
+- 采集快照、代码库地图和资料包带 `run_id`；`run_scope.py` 统一按 run 过滤，历史报告不会读取后续 run 的新资料。旧版无 `run_id` 的行只在目标 run 没有精确行时按截止时间兼容回退。
+- 报告评审锁项目行并检查 active job；历史报告只能改自身评审状态，不能覆盖当前项目或入队新任务。
 
 ## 4. 数据模型
 
@@ -66,8 +68,9 @@ Worker: execute_workflow
 | --- | --- |
 | `projects` | 项目配置、调研方式、状态 |
 | `sources` | 输入类型和规范化 URI |
-| `source_snapshots` | 采集摘要和失败原因 |
-| `codebase_maps` | 只读扫描结果：技术栈、入口、依赖、测试、文件树 |
+| `source_bundles` | 一次提交的资料包及条目状态；`run_id` 绑定采集时的 run |
+| `source_snapshots` | 采集摘要和失败原因；`run_id` 绑定采集所属 run |
+| `codebase_maps` | 只读扫描结果：技术栈、入口、依赖、测试、文件树；`run_id` 绑定 run |
 | `analysis_runs` | 一次 Loop 运行和最终状态 |
 | `loop_turns` | 每个节点的动作、观察和元数据 |
 | `evidence_items` | 可追溯证据 |
@@ -102,6 +105,13 @@ Worker: execute_workflow
 - 证据、发现、风险、报告和校验附录统一渲染。
 - 项目速览中的「依据」列出 README 路径/章节、能力表行数、代码扫描事实。
 
+`app/architecture/source_flow.py`：
+
+- Python AST 与 Tree-sitter JS/TS/TSX 解析源码声明、语句分类、调用表达式和真实行列。
+- 词法绑定解析 import/alias/receiver；动态分派、同义函数、路径别名、CommonJS、构造调用不猜。
+- 有文件数、字节数、函数/语句/调用、画布节点和语法节点预算；超限写 warnings/limits。
+- 结果存入 `ArchitectureDiagram.graph_json.details`，报告创建时按 `stats_json.run_id` 复制到 `verifier_result_json.architecture_diagrams`。
+
 ## 6. 调研方式与报告
 
 五种方式定义在 `app/research/profiles.py`，每种包含：
@@ -124,12 +134,15 @@ Worker: execute_workflow
 
 - 每次生成报告都会创建 `report_snapshots` 记录，历史报告按 `run_id`/`report_id` 保留。
 - 报告导出文件名：`项目名-调研方式-调研报告-日期-报告短ID.md/pdf`。
+- 报告 API 只返回图和 Mermaid 元数据；完整源码索引通过 `/reports/{id}/source-index` 按需获取，避免初始报告页数 MB。
 - 智能报告在确定性正文上追加模型段落；没有模型时回退为确定性正文。
 - 人工评审（通过 / 要求补充 / 驳回）改变报告和项目状态，不覆盖历史快照。
 
 ## 9. 安全边界
 
 - 只读调研；不执行被分析项目代码。
+- 网页采集默认拒绝回环、私网、链路本地和非全局 IP；每一跳 redirect 重新校验，响应有字节上限。需要内网文档时显式设置 `WEB_ALLOW_PRIVATE_HOSTS=true`。
+- DNS rebinding 仍未完全消除；生产部署应在网络层限制 Worker 出站。
 - LLM 不能新增未落库证据；引用只能来自 allowed evidence ids。
 - `.env`、运行日志、克隆目录和依赖目录不进入 Git；仓库只提供 `.env.example`。
 - 前端同源代理避免跨域；服务端默认只绑定 `127.0.0.1`。

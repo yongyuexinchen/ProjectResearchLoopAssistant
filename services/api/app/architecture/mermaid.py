@@ -24,7 +24,7 @@ def _render_flowchart(graph: Graph) -> str:
     ids = _node_ids(graph)
     lines: list[str] = ["flowchart TD" if graph.kind == "module_map" else "flowchart LR"]
     for node in graph.nodes:
-        label = _escape_label(node.label)
+        label = _escape_label(node.label, max_length=480 if graph.kind == "source_flow" else 120)
         if node.kind == "root":
             lines.append(f'    {ids[node.id]}(["{label}"])')
         elif node.kind == "entrypoint":
@@ -98,10 +98,10 @@ def _node_ids(graph: Graph) -> dict[str, str]:
     return ids
 
 
-def _escape_label(value: str) -> str:
+def _escape_label(value: str, *, max_length: int = 120) -> str:
     """Encode grammar/HTML characters; only renderer-owned line breaks remain markup."""
 
-    cleaned = str(value).replace("\\", "/")[:120]
+    cleaned = str(value).replace("\\", "/")[:max_length]
     parts = re.split(r"<br\s*/?>|\r\n?|\n", cleaned, flags=re.IGNORECASE)
     reserved = set('#&"<>%|{};[]`')
     return "<br/>".join(

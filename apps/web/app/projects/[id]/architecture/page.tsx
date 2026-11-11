@@ -2,10 +2,12 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { DiagramRegenerator } from "@/components/diagram-regenerator";
 import { WorkbenchNav } from "@/components/workbench-nav";
+import { SourceNavigator } from "@/components/source-navigator";
 import { generateArchitectureDiagrams, getProject, listArchitectureDiagrams } from "@/lib/api";
 import type { ArchitectureDiagram } from "@/types/project";
 
 const BASIS_LABELS: Record<string, string> = {
+  "static:source_ast": "静态事实 · 源码解析",
   "deterministic:file_tree": "确定性 · 目录树",
   "deterministic:import_scan": "确定性 · import 扫描",
   "deterministic:ast + regex": "确定性 · AST + 正则",
@@ -14,6 +16,7 @@ const BASIS_LABELS: Record<string, string> = {
 };
 
 const DIAGRAM_HINTS: Record<string, string> = {
+  source_flow: "教程式源码总图：文件、函数与调用行号。下方可搜索函数，查看内部语句分类与未解析调用。静态引用不等于运行时调用顺序。",
   module_map: "UML 包结构视角：目录层级与体量分布，判断哪些目录是主战场。",
   uml_component: "UML 组件图：一级模块当作构件，虚线箭头是 import 依赖。",
   uml_class: "UML 类图：真实类与主要方法，实线三角箭头表示继承。",
@@ -35,7 +38,7 @@ async function generateAction(projectId: string) {
 
 function BasisBadge({ basis }: { basis: string }) {
   const label = BASIS_LABELS[basis] ?? basis;
-  const className = basis.startsWith("deterministic") ? "badge badge-ok" : "badge badge-warning";
+  const className = basis.startsWith("deterministic") || basis.startsWith("static:") ? "badge badge-ok" : "badge badge-warning";
   return <span className={className}>{label}</span>;
 }
 
@@ -61,6 +64,8 @@ function DiagramCard({ diagram }: { diagram: ArchitectureDiagram }) {
 
       <DiagramRegenerator diagram={diagram} />
 
+      {diagram.diagram_type === "source_flow" ? <SourceNavigator details={diagram.graph_json.details} /> : null}
+
       {notes.length ? (
         <ul className="compact-list">
           {notes.map((note) => (
@@ -77,7 +82,7 @@ function DiagramCard({ diagram }: { diagram: ArchitectureDiagram }) {
             <ul className="compact-list">
               {nodes.slice(0, 40).map((node) => (
                 <li key={node.id}>
-                  {node.kind} · {node.path || "（根）"} · {node.file_count} 文件
+                  {node.label} · {node.path || "（根）"}{diagram.diagram_type !== "source_flow" ? ` · ${node.file_count} 文件` : ""}
                 </li>
               ))}
             </ul>
@@ -86,8 +91,9 @@ function DiagramCard({ diagram }: { diagram: ArchitectureDiagram }) {
             <h3>依赖边</h3>
             <ul className="compact-list">
               {edges.slice(0, 40).map((edge) => (
-                <li key={`${edge.source}->${edge.target}`}>
+                  <li key={`${edge.source}->${edge.target}-${edge.label}`}>
                   {edge.source} → {edge.target}
+                  {edge.label ? ` · ${edge.label}` : ""}
                   {edge.weight ? ` · ${edge.weight} 次` : ""}
                 </li>
               ))}
