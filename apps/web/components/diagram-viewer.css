@@ -1,0 +1,133 @@
+.architecture-diagram {
+  overflow: hidden;
+  border: 1px solid rgba(88, 166, 255, 0.22);
+  border-radius: 14px;
+  background: #0d1117;
+  color: #e6edf3;
+  min-width: 0;
+}
+
+.architecture-diagram__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(139, 148, 158, 0.2);
+  background: rgba(22, 27, 34, 0.85);
+}
+
+.architecture-diagram__toolbar > strong { overflow-wrap: anywhere; font-size: 13px; }
+.architecture-diagram__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+
+.architecture-diagram__actions button {
+  min-width: 36px;
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px solid rgba(139, 148, 158, 0.35);
+  border-radius: 7px;
+  background: #161b22;
+  color: #e6edf3;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.architecture-diagram__actions button:hover:enabled { border-color: #58a6ff; color: #79c0ff; }
+.architecture-diagram__actions button:focus-visible,
+.architecture-diagram__viewport:focus-visible { outline: 2px solid #58a6ff; outline-offset: -3px; }
+.architecture-diagram__actions button:disabled { opacity: 0.45; cursor: default; }
+.architecture-diagram__actions [data-diagram-close] { border-color: rgba(248, 81, 73, 0.55); }
+.architecture-diagram__actions [data-diagram-close] span { margin-left: 4px; color: #8b949e; font-size: 10px; }
+
+.architecture-diagram__zoom {
+  min-width: 56px;
+  color: #aab4c0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.architecture-diagram__viewport {
+  position: relative;
+  height: clamp(280px, 48vh, 520px);
+  min-width: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  background-color: #0d1117;
+  background-image: radial-gradient(rgba(139, 148, 158, 0.14) 1px, transparent 1px);
+  background-size: 20px 20px;
+  isolation: isolate;
+}
+
+.architecture-diagram__viewport.is-dragging { cursor: grabbing; }
+.architecture-diagram__svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  user-select: none;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* Preserve the SVG's intrinsic dimensions before applying the canvas transform. */
+.architecture-diagram__svg > svg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  overflow: visible;
+}
+
+.architecture-diagram__message {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 24px;
+  overflow: auto;
+  cursor: auto;
+  touch-action: pan-y;
+  font-size: 13px;
+}
+.architecture-diagram__message pre { max-width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.architecture-diagram__message summary { cursor: pointer; }
+.architecture-diagram__hint {
+  margin: 0;
+  padding: 9px 14px;
+  border-top: 1px solid rgba(139, 148, 158, 0.12);
+  color: #8b949e;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.architecture-diagram-dialog {
+  position: fixed;
+  inset: 12px;
+  width: calc(100vw - 24px);
+  height: calc(100dvh - 24px);
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #30363d;
+  border-radius: 14px;
+  background: #0d1117;
+  color: #e6edf3;
+  box-sizing: border-box;
+}
+.architecture-diagram-dialog::backdrop { background: rgba(1, 4, 9, 0.82); backdrop-filter: blur(5px); }
+.architecture-diagram--fullscreen { display: flex; flex-direction: column; height: 100%; border: 0; border-radius: 0; }
+.architecture-diagram--fullscreen .architecture-diagram__toolbar,
+.architecture-diagram--fullscreen .architecture-diagram__hint { flex-shrink: 0; }
+.architecture-diagram--fullscreen .architecture-diagram__viewport { flex: 1; height: auto; min-height: 0; }
+
+@media (max-width: 600px) {
+  .architecture-diagram__toolbar { padding: 10px; }
+  .architecture-diagram__actions { gap: 5px; }
+  .architecture-diagram__actions button { min-height: 38px; padding: 5px 8px; }
+  .architecture-diagram-dialog { inset: 4px; width: calc(100vw - 8px); height: calc(100dvh - 8px); border-radius: 10px; }
+}
