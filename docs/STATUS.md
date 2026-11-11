@@ -49,6 +49,7 @@ Project Research Loop Assistant 是一个只读的工程调研工作台：输入
 - 架构图按运行保存，支持整图拖动、鼠标位置缩放、全屏、适应画布、1:1、键盘操作
 - 单张架构图可重新生成；只更新选中图，不重新扫描仓库、不调用模型
 - 新增源码函数/调用位置图：Python AST 与 JS/TS/TSX Tree-sitter 静态索引，保存函数、语句分类、调用行号、源码 hash；报告在线/Markdown/PDF 使用同一份 run 快照
+- 图和源码导航都带说明：类节点注记文件、继承关系、方法；模块节点注记角色和文件量；源码函数注记 docstring 或首段语句；节点明细、报告表格和 PDF 都有“说明”列
 - Worker job 收尾按 owner + attempt 原子条件更新，旧 Worker 不能覆盖新租约；普通 run 和 workflow 的 resume 都进入 durable job
 - checkpointer 遵循 LangGraph 特殊 channel 的保留负索引/覆盖语义；评分节点用输入稳定键去重，崩溃恢复不重复写评分轨迹
 
@@ -103,6 +104,7 @@ Project Research Loop Assistant 是一个只读的工程调研工作台：输入
 - 真实仓库验证：OSIRIS 生成 500 文件、2400 函数、8613 个调用点的源码索引，报告 117KB，PDF 42 页
 - 报告页初始 HTML：约 6.1MB → 559KB；完整源码索引点击“按需加载源码逐段导航”后再请求
 - 真实 worldmonitor GitHub 采集：首次因长时间 clone 后 MySQL 连接失效而失败；修复连接释放与只读 pack 清理后，retry 从 0% 完成到 100%，源状态 `collected`，报告已生成
+- 重新生成 worldmonitor 架构图与报告后，6 张图的所有节点都有说明；报告 `640244cf-702b-4497-b9d2-3e7fd69db33f` 页面 621KB
 
 CI 只运行确定性测试和类型检查，不配置真实数据库、模型密钥或付费模型调用：
 

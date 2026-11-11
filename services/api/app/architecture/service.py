@@ -74,8 +74,12 @@ def _graph_from_snapshot(snapshot: object, diagram_type: str) -> Graph:
         methods = item.get("methods", [])
         if not isinstance(methods, list) or not all(isinstance(method, str) for method in methods):
             raise ValueError(error)
+        description = item.get("description", "")
+        if not isinstance(description, str):
+            raise ValueError(error)
         node = GraphNode(**{key: item[key] for key in ("id", "label", "path", "kind")},
-                         file_count=item.get("file_count", 0), entrypoint=item.get("entrypoint", False))
+                         file_count=item.get("file_count", 0), entrypoint=item.get("entrypoint", False),
+                         description=description)
         if "methods" in item:
             node.__dict__["methods"] = list(methods)
         graph.nodes.append(node)

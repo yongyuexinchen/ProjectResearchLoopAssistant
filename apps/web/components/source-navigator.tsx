@@ -39,7 +39,10 @@ export function SourceNavigator({ details }: { details: unknown }) {
         <h3>{current.qualified_name}({current.parameters.join(", ")})</h3>
         <p><code>{current.path}:{current.line_start}–{current.line_end}</code></p>
         {current.docstring ? <pre className="source-navigator__comment">{current.docstring}</pre> : <p className="meta">此函数没有可提取的说明注释；下方用途仅说明语法作用。</p>}
-        {file ? <p className="meta source-navigator__hash">源码 SHA-256：{file.sha256}</p> : null}
+        {file ? <div className="meta source-navigator__hash">
+          <div>当前文件：{file.path} · {file.description || "未提取到文件说明"}</div>
+          <div>源码 SHA-256：{file.sha256}</div>
+        </div> : null}
         <h4>函数内部：每段在哪里、做什么</h4>
         {current.statements.length ? <ol className="source-navigator__statements">
           {current.statements.map((item, i) => <li key={`${item.line_start}-${i}`}>

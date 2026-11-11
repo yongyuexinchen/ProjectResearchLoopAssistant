@@ -53,6 +53,7 @@ class ParsedFile:
     functions: list[Function] = field(default_factory=list)
     exports: dict[str, Binding | None] = field(default_factory=dict)
     has_errors: bool = False
+    module_docstring: str = ""
 
 
 @dataclass

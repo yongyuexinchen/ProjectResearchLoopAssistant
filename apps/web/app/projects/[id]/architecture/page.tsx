@@ -82,7 +82,10 @@ function DiagramCard({ diagram }: { diagram: ArchitectureDiagram }) {
             <ul className="compact-list">
               {nodes.slice(0, 40).map((node) => (
                 <li key={node.id}>
-                  {node.label} · {node.path || "（根）"}{diagram.diagram_type !== "source_flow" ? ` · ${node.file_count} 文件` : ""}
+                  <div>
+                    {node.label} · {node.path || "（根）"}{diagram.diagram_type !== "source_flow" ? ` · ${node.file_count} 文件` : ""}
+                  </div>
+                  {node.description ? <div className="meta">{node.description}</div> : null}
                 </li>
               ))}
             </ul>

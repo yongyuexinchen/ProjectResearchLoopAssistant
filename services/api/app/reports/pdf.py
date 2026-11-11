@@ -119,6 +119,8 @@ class _ReportCanvas:
             label = f"{index}. {text(node.get('label'))}"
             if node.get("path"):
                 label += f" · {text(node['path'])}"
+            if node.get("description"):
+                label += f" · 说明：{text(node['description'])}"
             lines = self.card_lines(label, self.available_width)
             height = max(32, len(lines) * 12 + 14)
             self.ensure(height + 18)
@@ -155,7 +157,11 @@ class _ReportCanvas:
         if notice:
             self.paragraph(notice, size=9)
         for file in files:
-            self.paragraph(f"{text(file.get('path'))} · {text(file.get('language'))} · SHA-256 {text(file.get('sha256'))}", size=8)
+            self.paragraph(
+                f"{text(file.get('path'))} · {text(file.get('language'))} · SHA-256 {text(file.get('sha256'))} · "
+                f"说明：{text(file.get('description') or '未记录')}",
+                size=8,
+            )
         for warning in details.get("warnings", []) if isinstance(details.get("warnings"), list) else []:
             self.paragraph(f"限制：{text(warning)}", size=9)
         functions_by_id = {text(function.get("id")): function for function in records(details.get("functions"))}

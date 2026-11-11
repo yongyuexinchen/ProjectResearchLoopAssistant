@@ -13,7 +13,7 @@ def parse_python(path: str, source: str, budget: Budget, entry_file: bool,
     tree = ast.parse(source, filename=path)
     if sum(1 for _ in ast.walk(tree)) > max_syntax_nodes:
         raise ValueError("syntax-node budget exceeded")
-    parsed = ParsedFile(path, "python", Scope("module"))
+    parsed = ParsedFile(path, "python", Scope("module"), module_docstring=(ast.get_docstring(tree) or "").strip())
     lines = source.splitlines()
     utf8_lines = [line.encode("utf-8") for line in lines]
 

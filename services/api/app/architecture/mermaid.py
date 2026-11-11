@@ -24,7 +24,11 @@ def _render_flowchart(graph: Graph) -> str:
     ids = _node_ids(graph)
     lines: list[str] = ["flowchart TD" if graph.kind == "module_map" else "flowchart LR"]
     for node in graph.nodes:
-        label = _escape_label(node.label, max_length=480 if graph.kind == "source_flow" else 120)
+        raw_label = node.label
+        description = str(getattr(node, "description", "") or "").strip()
+        if description and description not in raw_label:
+            raw_label = f"{raw_label}<br/>{description}"
+        label = _escape_label(raw_label, max_length=600 if graph.kind == "source_flow" else 240)
         if node.kind == "root":
             lines.append(f'    {ids[node.id]}(["{label}"])')
         elif node.kind == "entrypoint":
@@ -67,6 +71,9 @@ def _render_class_diagram(graph: Graph) -> str:
             # Method names come from source code, so never interpolate grammar characters.
             method = re.sub(r"[^\w$]", "_", str(name))[:80]
             lines.append(f"    {node_id} : +{method}()")
+        description = str(getattr(node, "description", "") or "").strip()
+        if description:
+            lines.append(f'    note for {node_id} "{_escape_label(description, max_length=180)}"')
     for edge in graph.edges:
         if edge.label == "extends":
             lines.append(f"    {ids[edge.source]} <|-- {ids[edge.target]}")

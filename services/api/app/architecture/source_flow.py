@@ -255,6 +255,40 @@ def _resolve_calls(parsed_files: list[ParsedFile]) -> None:
                     )
 
 
+def _describe_function(fn: dict) -> str:
+    docstring = str(fn.get("docstring") or "").strip()
+    if docstring:
+        return docstring.splitlines()[0][:180]
+    if fn.get("synthetic"):
+        statements = fn.get("statements") or []
+        if statements:
+            first = statements[0]
+            excerpt = str(first.get("excerpt") or "").strip().splitlines()[0][:100]
+            return f"文件顶层执行语句；首段：{first.get('label') or first.get('kind')}；{excerpt}"
+        return "文件顶层执行语句；不是独立函数。"
+    statements = fn.get("statements") or []
+    if statements:
+        first = statements[0]
+        excerpt = str(first.get("excerpt") or "").strip().splitlines()[0][:100]
+        return f"语法流程首段：{first.get('label') or first.get('kind')}；{excerpt}"
+    kind = "方法" if fn.get("kind") == "method" else "函数"
+    return f"{kind}；未提取到 docstring 或语句摘要。"
+
+
+def _describe_file(parsed: ParsedFile, path: str) -> str:
+    docstring = str(parsed.module_docstring or "").strip()
+    if docstring:
+        return docstring.splitlines()[0][:180]
+    name = PurePosixPath(path).name.lower()
+    functions = [fn.data.get("qualified_name") or fn.data.get("name") for fn in parsed.functions]
+    if name in {"page.tsx", "page.ts", "page.jsx", "page.js", "layout.tsx", "layout.ts", "route.ts", "route.js"}:
+        return f"Next.js 路由/页面文件；包含 {len(functions)} 个函数或组件。"
+    if functions:
+        preview = "、".join(str(item) for item in functions[:4])
+        return f"源码文件；包含 {len(functions)} 个函数/方法：{preview}{' 等' if len(functions) > 4 else ''}。"
+    return "未提取到函数或注释；可能是配置、数据或纯类型声明文件。"
+
+
 def _canvas(functions: list[dict], warnings: list[str]) -> tuple[list[GraphNode], list[GraphEdge]]:
     by_id = {fn["id"]: fn for fn in functions}
     adjacency = {fn["id"]: [c for c in fn["calls"] if c["target_id"] in by_id] for fn in functions}
@@ -280,7 +314,8 @@ def _canvas(functions: list[dict], warnings: list[str]) -> tuple[list[GraphNode]
     nodes = [GraphNode(id=fn["id"],
                        label=f'{fn["qualified_name"]}<br/>{fn["path"]}:L{fn["line_start"]}-L{fn["line_end"]}',
                        path=fn["path"], kind="entrypoint" if fn["entrypoint"] else "function",
-                       entrypoint=bool(fn["entrypoint"])) for fn in visible]
+                       entrypoint=bool(fn["entrypoint"]),
+                       description=_describe_function(fn)) for fn in visible]
     edges = []
     for fn in visible:
         for reference in adjacency[fn["id"]]:
@@ -409,6 +444,7 @@ def build_source_flow(root: Path | None, codebase: dict) -> Graph | None:
                     parsed = parse_javascript(normalized, data, language, budget,
                                               normalized in entrypoints, MAX_SYNTAX_NODES)
                 parsed_files.append(parsed)
+                descriptor["description"] = _describe_file(parsed, normalized)
                 if parsed.has_errors:
                     stats["parse_errors"] += 1
                     descriptor["parse_error"] = True
@@ -416,6 +452,7 @@ def build_source_flow(root: Path | None, codebase: dict) -> Graph | None:
             except (SyntaxError, UnicodeError, ValueError, RecursionError, MemoryError) as exc:
                 stats["parse_errors"] += 1
                 descriptor["parse_error"] = True
+                descriptor["description"] = "源码解析失败；未提取函数或类说明，需人工查看原始文件。"
                 warn(f"{normalized}: parse failed ({type(exc).__name__}: {str(exc)[:100]})")
 
     if stats["unsupported_files"]:

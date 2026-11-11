@@ -40,7 +40,8 @@ def build_component_diagram(dependency: Graph | None) -> Graph | None:
             continue
         kept.add(node.id)
         graph.nodes.append(
-            GraphNode(id=node.id, label=node.label, path=node.path, kind="component", file_count=node.file_count)
+            GraphNode(id=node.id, label=node.label, path=node.path, kind="component", file_count=node.file_count,
+                      description=getattr(node, "description", "") or f"一级模块构件；路径 {node.path or '根目录'}。")
         )
     for edge in dependency.edges:
         if edge.source in kept and edge.target in kept:
@@ -104,6 +105,7 @@ def build_class_diagram(root: Path | None, codebase: dict[str, Any]) -> Graph | 
                 path=item["path"],
                 kind="class",
                 file_count=len(item["methods"]),
+                description=_class_description(item),
             )
         )
         graph.nodes[-1].__dict__["methods"] = item["methods"]
@@ -149,9 +151,11 @@ def build_sequence_diagram(codebase: dict[str, Any], dependency: Graph | None) -
         start = _top_module_of_id(edges[0].source, dependency)
 
     graph = Graph(kind="uml_sequence", title="时序图（UML）", basis="heuristic:import_order")
-    graph.nodes.append(GraphNode(id="actor", label="调用方", path="", kind="actor"))
+    graph.nodes.append(GraphNode(id="actor", label="调用方", path="", kind="actor",
+                                 description="外部调用方；本次只按 import 依赖画静态主链路，不代表真实请求。"))
     seen: list[str] = [start]
-    graph.nodes.append(GraphNode(id=_node_id("s", start), label=start, path=start, kind="participant"))
+    graph.nodes.append(GraphNode(id=_node_id("s", start), label=start, path=start, kind="participant",
+                                 description=f"入口模块「{start}」；时序来自 import 依赖权重排序，不是运行追踪。"))
 
     # 相邻关系：source 模块 -> [target 模块]
     adjacency: dict[str, list[str]] = defaultdict(list)
@@ -184,7 +188,8 @@ def build_sequence_diagram(codebase: dict[str, Any], dependency: Graph | None) -
                 break
 
     for target in ordered_targets:
-        graph.nodes.append(GraphNode(id=_node_id("s", target), label=target, path=target, kind="participant"))
+        graph.nodes.append(GraphNode(id=_node_id("s", target), label=target, path=target, kind="participant",
+                                     description=f"下游模块「{target}」；按 import 依赖权重进入主链路。"))
         seen.append(target)
 
     graph.edges.append(GraphEdge(source="actor", target=_node_id("s", start), label="触发入口"))
@@ -203,6 +208,21 @@ def _top_module_of_id(node_id: str, dependency: Graph) -> str | None:
         if node.id == node_id:
             return node.path
     return None
+
+
+def _class_description(item: dict[str, Any]) -> str:
+    location = f"文件 {item.get('path') or '未记录'}；"
+    docstring = str(item.get("docstring") or "").strip()
+    if docstring:
+        return location + docstring.splitlines()[0][:160]
+    methods = item.get("methods") or []
+    bases = item.get("bases") or []
+    facts = []
+    if bases:
+        facts.append("继承自 " + "、".join(str(base) for base in bases[:3]))
+    if methods:
+        facts.append("包含方法：" + "、".join(str(method) for method in methods[:5]))
+    return location + ("；".join(facts) if facts else "未提取到类注释或方法，需结合源码人工确认职责。")
 
 
 def _python_classes(relative: str, text: str) -> list[dict[str, Any]]:
@@ -227,6 +247,7 @@ def _python_classes(relative: str, text: str) -> list[dict[str, Any]]:
                 "bases": [base for base in bases if base],
                 "methods": methods,
                 "language": "python",
+                "docstring": (ast.get_docstring(node) or "").strip(),
             }
         )
     return results
@@ -251,6 +272,7 @@ def _js_classes(relative: str, text: str) -> list[dict[str, Any]]:
                 "bases": [base] if base else [],
                 "methods": methods,
                 "language": "js",
+                "docstring": "",
             }
         )
     return results

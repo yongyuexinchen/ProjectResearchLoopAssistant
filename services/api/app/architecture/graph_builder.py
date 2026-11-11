@@ -51,6 +51,7 @@ class GraphNode:
     kind: str
     file_count: int = 0
     entrypoint: bool = False
+    description: str = ""
 
 
 @dataclass
@@ -167,7 +168,8 @@ def build_module_map(codebase: dict[str, Any]) -> Graph:
     )
     root_label = str(codebase.get("root_label") or "工程根目录")
     graph.nodes.append(GraphNode(id="n_root", label=f"{root_label}（{visible_file_count} 文件）",
-                                 path="", kind="root", file_count=visible_file_count))
+                                 path="", kind="root", file_count=visible_file_count,
+                                 description="采集到的工程根目录；括号内是参与扫描的文件/目录线索数量。"))
     ids[""] = "n_root"
     if not top_level:
         graph.notes.append("未识别出可展示的子目录，根节点表示采集到的工程根目录。")
@@ -176,7 +178,8 @@ def build_module_map(codebase: dict[str, Any]) -> Graph:
         node_id = _node_id("n", path)
         ids[path] = node_id
         graph.nodes.append(
-            GraphNode(id=node_id, label=f"{path}（{file_counts[path]} 文件）", path=path, kind="directory", file_count=file_counts[path])
+            GraphNode(id=node_id, label=f"{path}（{file_counts[path]} 文件）", path=path, kind="directory", file_count=file_counts[path],
+                      description=f"{_module_role(path)}；目录下约 {file_counts[path]} 个文件/目录线索。")
         )
         graph.edges.append(GraphEdge(source="n_root", target=node_id))
 
@@ -193,7 +196,8 @@ def build_module_map(codebase: dict[str, Any]) -> Graph:
                 continue
             label = child.split("/")[-1]
             graph.nodes.append(
-                GraphNode(id=node_id, label=f"{label}/（{file_counts[child]} 文件）", path=child, kind="directory", file_count=file_counts[child])
+                GraphNode(id=node_id, label=f"{label}/（{file_counts[child]} 文件）", path=child, kind="directory", file_count=file_counts[child],
+                          description=f"{parent} 下的子目录，约 {file_counts[child]} 个文件/目录线索。")
             )
             graph.edges.append(GraphEdge(source=ids[parent], target=node_id))
 
@@ -201,7 +205,8 @@ def build_module_map(codebase: dict[str, Any]) -> Graph:
         parent_path = entrypoint.rsplit("/", 1)[0] if "/" in entrypoint else ""
         parent_id = ids.get(parent_path) or "n_root"
         node_id = f"n_entry_{index}"
-        graph.nodes.append(GraphNode(id=node_id, label=f"▶ {entrypoint}", path=entrypoint, kind="entrypoint", entrypoint=True))
+        graph.nodes.append(GraphNode(id=node_id, label=f"▶ {entrypoint}", path=entrypoint, kind="entrypoint", entrypoint=True,
+                                     description="采集阶段识别的入口文件线索；从这里开始阅读启动/请求装配。"))
         graph.edges.append(GraphEdge(source=parent_id, target=node_id, label="入口"))
     if entrypoints:
         graph.notes.append("▶ 标记的是采集阶段识别出的入口文件线索。")
@@ -254,7 +259,8 @@ def build_dependency_flow(root: Path | None, codebase: dict[str, Any]) -> Graph 
     for module in sorted(used):
         display = "根目录文件" if module == "(根目录)" else f"{module}（{total_by_module.get(module, 0)} 文件）"
         graph.nodes.append(
-            GraphNode(id=_node_id("m", module), label=display, path=module, kind="module", file_count=total_by_module.get(module, 0))
+            GraphNode(id=_node_id("m", module), label=display, path=module, kind="module", file_count=total_by_module.get(module, 0),
+                      description=f"{_module_role(module)}；该模块被其他模块 import 引用。")
         )
     graph.edges = [
         GraphEdge(source=_node_id("m", source), target=_node_id("m", target), weight=weight, label=str(weight))
@@ -294,12 +300,14 @@ def build_data_flow(codebase: dict[str, Any], dependency: Graph | None) -> Graph
         node_id = f"L{index}"
         layer_ids[layer] = node_id
         graph.nodes.append(
-            GraphNode(id=node_id, label=f"{layer}<br/>{preview}", path=layer, kind="layer", file_count=sum(count for _n, count in modules))
+            GraphNode(id=node_id, label=f"{layer}<br/>{preview}", path=layer, kind="layer", file_count=sum(count for _n, count in modules),
+                      description=f"按目录命名归入「{layer}」的模块：{preview}。这是静态分层，不是运行调用链。")
         )
 
     entrypoints = [str(item) for item in (codebase.get("entrypoint_files") or [])][:3]
     if entrypoints:
-        graph.nodes.append(GraphNode(id="L_entry", label="入口文件<br/>" + "<br/>".join(entrypoints), path="", kind="entrypoint", entrypoint=True))
+        graph.nodes.append(GraphNode(id="L_entry", label="入口文件<br/>" + "<br/>".join(entrypoints), path="", kind="entrypoint", entrypoint=True,
+                                     description="采集阶段识别到的入口文件线索，是阅读启动装配的起点。"))
 
     layer_edges: Counter[tuple[str, str]] = Counter()
     if dependency is not None:
@@ -423,6 +431,23 @@ def _layer_of(module: str) -> str:
         if any(keyword in lowered for keyword in keywords):
             return layer
     return "其他模块"
+
+
+def _module_role(module: str) -> str:
+    first = module.split("/", 1)[0].lower()
+    if first in {"src", "source"}:
+        return "源码根目录"
+    if first in {"server", "serverless", "convex"}:
+        return "服务端代码"
+    if first in {"sdk", "client", "clients"}:
+        return "客户端 SDK"
+    if any(token in first for token in ("shared", "common", "utils", "helpers")):
+        return "共享工具"
+    if first in {"proto", "protos", "idl"} or "proto" in first:
+        return "协议/接口定义"
+    if first.endswith("-site") or first.endswith("web") or first.endswith("frontend"):
+        return "站点/前端"
+    return _layer_of(first)
 
 
 def _node_id(prefix: str, value: str) -> str:

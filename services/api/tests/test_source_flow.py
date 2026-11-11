@@ -41,6 +41,9 @@ def test_python_cross_file_alias_and_actual_callsite(tmp_path):
     assert any(edge.source == main["id"] and edge.target == target["id"] and "L4" in edge.label for edge in graph.edges)
     assert graph.details["files"][0]["sha256"]
     assert graph.details["version"] == 1
+    assert any("包含" in graph.details["files"][0]["description"] for _ in [0])
+    node = next(item for item in graph.nodes if item.id == main["id"])
+    assert "语法流程首段" in node.description
 
 
 def test_python_module_import_and_relative_package_alias(tmp_path):

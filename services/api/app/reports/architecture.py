@@ -124,8 +124,11 @@ def render_architecture_markdown(diagrams: list[dict[str, Any]]) -> str:
         lines.extend(["", f"{fence}mermaid", mermaid, fence, ""])
         nodes = records(graph.get("nodes"))
         if nodes:
-            lines.extend(["节点索引：", "", "| 节点 | 源码/目录位置 |", "| --- | --- |"])
-            lines.extend(f"| {markdown_text(node.get('label'))} | {markdown_text(node.get('path'))} |" for node in nodes)
+            lines.extend(["节点索引：", "", "| 节点 | 源码/目录位置 | 说明 |", "| --- | --- | --- |"])
+            lines.extend(
+                f"| {markdown_text(node.get('label'))} | {markdown_text(node.get('path'))} | {markdown_text(node.get('description') or '未记录')} |"
+                for node in nodes
+            )
             lines.append("")
         details = graph.get("details")
         if not isinstance(details, dict):
@@ -140,7 +143,11 @@ def render_source_details_markdown(details: dict[str, Any]) -> list[str]:
     if notice:
         lines.extend([notice, ""])
     for file in files:
-        lines.append(f"- {markdown_text(file.get('path'))} · {markdown_text(file.get('language'))} · {markdown_text(file.get('line_count'))} 行 · SHA-256 {markdown_text(file.get('sha256'))}")
+        lines.append(
+            f"- {markdown_text(file.get('path'))} · {markdown_text(file.get('language'))} · "
+            f"{markdown_text(file.get('line_count'))} 行 · SHA-256 {markdown_text(file.get('sha256'))} · "
+            f"说明：{markdown_text(file.get('description') or '未记录')}"
+        )
     for warning in details.get("warnings", []) if isinstance(details.get("warnings"), list) else []:
         lines.append(f"- 限制/提示：{markdown_text(warning)}")
     if isinstance(details.get("limits"), dict):

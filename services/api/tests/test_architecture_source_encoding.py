@@ -15,6 +15,8 @@ def test_class_diagram_reads_python_with_or_without_utf8_bom(tmp_path, encoding)
     service = next(node for node in graph.nodes if node.label == "Service")
     assert service.path == "service.py"
     assert service.__dict__["methods"] == ["handle"]
+    assert "文件 service.py" in service.description
+    assert "包含方法：handle" in service.description
 
 
 def test_malformed_python_is_still_skipped_without_aborting_class_scan(tmp_path):

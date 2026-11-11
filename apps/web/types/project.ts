@@ -440,6 +440,10 @@ export type ArchitectureNode = {
   kind: string;
   file_count: number;
   entrypoint: boolean;
+  description?: string;
+  methods?: string[];
+  bases?: string[];
+  language?: string;
 };
 
 export type ArchitectureEdge = {
@@ -465,9 +469,13 @@ export type SourceFunction = {
   entrypoint: { kind: string; label: string; line: number; confidence: string } | null;
 };
 
+export type SourceFile = {
+  path: string; language: string; sha256: string; line_count: number; description?: string;
+};
+
 export type SourceIndex = {
   version: number;
-  files: { path: string; language: string; sha256: string; line_count: number }[];
+  files: SourceFile[];
   functions: SourceFunction[];
   stats: Record<string, unknown>; limits: Record<string, unknown>; warnings: string[];
 };
