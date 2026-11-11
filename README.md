@@ -1,6 +1,14 @@
 # Project Research Loop Assistant
 
+[![CI](https://github.com/yongyuexinchen/ProjectResearchLoopAssistant/actions/workflows/ci.yml/badge.svg)](https://github.com/yongyuexinchen/ProjectResearchLoopAssistant/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Project Research Loop Assistant / 工程调研 Loop 助手，是一个用于理解陌生工程和新代码库的 Loop Engineering 示例项目。系统围绕一个可验证目标持续采集资料、分析项目、记录证据、运行验证器并生成 Project Research Package / 项目调研包。
+
+文档入口：
+
+- [项目现状与评审说明](docs/STATUS.md)：当前能力、验证基线、已知边界和外部评审建议。
+- [架构说明](docs/ARCHITECTURE.md)：运行时流程、数据模型、扫描/报告/校验架构。
 
 项目使用：
 
