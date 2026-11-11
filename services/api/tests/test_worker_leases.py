@@ -4,6 +4,7 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from app.db.models import AnalysisRun, Project, RunEvent, RunJob, utc_now
+from app.services.errors import user_error_message
 from app.services.run_jobs import (
     claim_next_job,
     create_run_job,
@@ -52,6 +53,21 @@ def test_claim_next_job_sets_lease_fields_and_excludes_other_workers():
         assert second_claim is None
     finally:
         session_iter.close()
+
+
+def test_user_error_message_hides_sql_and_explains_lost_mysql_connection():
+    from sqlalchemy.exc import OperationalError
+
+    error = OperationalError(
+        "UPDATE sources SET status=%(status)s",
+        {"status": "failed"},
+        Exception("(2013, 'Lost connection to MySQL server during query')"),
+    )
+    message = user_error_message(error)
+
+    assert "数据库连接中断" in message
+    assert "UPDATE sources" not in message
+    assert "parameters" not in message
 
 
 def test_finalize_is_fenced_by_owner_and_attempt():

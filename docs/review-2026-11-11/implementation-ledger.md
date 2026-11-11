@@ -14,7 +14,7 @@ Ruling: AST references are static facts; runtime ordering, object dispatch, cros
 
 Local verification after continuation:
 
-- Backend: 421 passed, 2 skipped.
+- Backend: 423 passed, 2 skipped.
 - Frontend: 19 passed; TypeScript exit 0.
 - Production build: passed with a temporary `.next-*` dist; temporary dist removed.
 - Real repository: OSIRIS produced 500 files, 2400 functions, 8613 calls; report 117,839 chars; PDF 42 pages with vector cards.
@@ -32,6 +32,7 @@ Continuation fixes for the audit items named in the delivery summary:
 - Scoring: `verification_key` reuses the same score/turn on replay while a changed answer/input creates a new one.
 - Evidence: LLM-derived evidence requires `derived_from` collected refs; intelligent report summary requires at least one validated evidence-backed section.
 - Small fixes: README `None` semantics, Go `_test.go`, multi-map evidence refs, duplicate UML class identity, cost heuristic labels, `.env.example` skipped-path messaging.
+- Runtime incident: long GitHub clone held an idle MySQL transaction and the retry hit read-only Git pack files. Collection now commits before external work, clone clears read-only attributes before replacement, and worker errors are summarized without SQL dumps. Real worldmonitor retry completed 0→100%.
 
 Known limits:
 

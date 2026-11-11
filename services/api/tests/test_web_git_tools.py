@@ -146,6 +146,35 @@ def test_ensure_child_path_rejects_workspace_escape(tmp_path: Path):
         ensure_child_path(tmp_path.parent, tmp_path)
 
 
+def test_clone_replaces_existing_windows_read_only_pack_files(tmp_path: Path):
+    root = tmp_path / "workspace"
+    target = repo_workspace_path(root, "project-1", "https://github.com/acme/demo")
+    pack = target / ".git" / "objects" / "pack" / "old.idx"
+    pack.parent.mkdir(parents=True)
+    pack.write_bytes(b"pack")
+    pack.chmod(0o444)
+
+    calls: list[list[str]] = []
+
+    def fake_runner(args, **kwargs):
+        calls.append(list(args))
+        if args[:2] == ["git", "clone"]:
+            return SimpleNamespace(stdout="", stderr="")
+        return SimpleNamespace(stdout="main\n" if "abbrev-ref" in args else "abc123\n", stderr="")
+
+    result = clone_public_github_repo(
+        github_url="https://github.com/acme/demo",
+        workspace_root=root,
+        project_id="project-1",
+        timeout_seconds=10,
+        runner=fake_runner,
+    )
+
+    assert not pack.exists()
+    assert result["metadata"]["commit"] == "abc123"
+    assert calls[0][:4] == ["git", "clone", "--depth", "1"]
+
+
 def test_clone_public_github_repo_records_branch_and_commit(tmp_path: Path):
     calls: list[list[str]] = []
 

@@ -55,6 +55,8 @@ Project Research Loop Assistant 是一个只读的工程调研工作台：输入
 ### 证据与安全边界
 
 - 采集是只读的：不修改被分析代码、不执行被分析项目脚本、不创建 commit/issue/PR
+- 长时间 clone/网页读取前会结束数据库事务，不在外部网络等待期间占用 MySQL 连接；重复 clone 会清理 Windows 只读 pack 文件
+- 数据库/SQL 错误对用户只显示可行动摘要，不把 SQL 参数和驱动堆栈塞进页面
 - 扫描过滤敏感文件（`.env`、key、pem 等）、vendor、构建产物、缓存和大型生成文件
 - 采集快照、代码库地图和资料包绑定到本次 run；历史报告不会读取后续 run 的新资料（旧版无 run_id 的数据有受控兼容回退）
 - 网页采集默认只允许公网 IP，逐跳复核 redirect；有响应字节上限；内网资料需要显式开启 `WEB_ALLOW_PRIVATE_HOSTS`
@@ -92,7 +94,7 @@ Project Research Loop Assistant 是一个只读的工程调研工作台：输入
 
 最后一轮本地验证：
 
-- 后端：`421 passed, 2 skipped`
+- 后端：`423 passed, 2 skipped`
 - 前端：19 项测试通过
 - TypeScript：`npx tsc --noEmit` 通过
 - 生产构建：`npm run build` 通过
@@ -100,6 +102,7 @@ Project Research Loop Assistant 是一个只读的工程调研工作台：输入
 - 真实模型端到端验证过：教学拆解、架构理解、智能报告增强与自动完成流程
 - 真实仓库验证：OSIRIS 生成 500 文件、2400 函数、8613 个调用点的源码索引，报告 117KB，PDF 42 页
 - 报告页初始 HTML：约 6.1MB → 559KB；完整源码索引点击“按需加载源码逐段导航”后再请求
+- 真实 worldmonitor GitHub 采集：首次因长时间 clone 后 MySQL 连接失效而失败；修复连接释放与只读 pack 清理后，retry 从 0% 完成到 100%，源状态 `collected`，报告已生成
 
 CI 只运行确定性测试和类型检查，不配置真实数据库、模型密钥或付费模型调用：
 

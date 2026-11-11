@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db.models import CodebaseMap, Project, Source, SourceBundle, SourceBundleItem, SourceSnapshot
 from app.services.audit import record_event
+from app.services.errors import user_error_message
 from app.tools.code_scan_tools import scan_codebase
 from app.tools.file_tools import read_local_file
 from app.tools.git_tools import clone_public_github_repo
@@ -60,6 +61,9 @@ def collect_project_sources(
             project_id=project.id,
             payload={"source_id": source.id, "source_type": source.source_type},
         )
+        # Collection may clone or fetch for minutes. Do not hold an idle
+        # transaction/connection across that network work.
+        session.commit()
         try:
             snapshot_data, codebase_data = collect_one_source(source, project, settings)
             if run_id:
@@ -111,6 +115,7 @@ def collect_project_sources(
             )
         except Exception as exc:  # noqa: BLE001 - 按源隔离失败，继续保留可审计快照。
             source.status = "failed"
+            error_message = user_error_message(exc)
             session.add(
                 SourceSnapshot(
                     project_id=project.id,
@@ -121,7 +126,7 @@ def collect_project_sources(
                     title=source.normalized_uri,
                     metadata_json={},
                     skipped_items_json=[],
-                    error_message=str(exc),
+                    error_message=error_message,
                 )
             )
             record_event(
@@ -129,7 +134,7 @@ def collect_project_sources(
                 event_type="source.collection_failed",
                 message="Source collection failed",
                 project_id=project.id,
-                payload={"source_id": source.id, "error": str(exc)},
+                payload={"source_id": source.id, "error": error_message},
             )
     session.flush()
     return list_inventory(session, project)

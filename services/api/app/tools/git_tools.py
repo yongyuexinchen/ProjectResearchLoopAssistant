@@ -1,6 +1,8 @@
 import hashlib
+import os
 import re
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
@@ -73,7 +75,7 @@ def clone_public_github_repo(
 
     if target.exists():
         ensure_child_path(target, workspace_root)
-        shutil.rmtree(target)
+        _remove_existing_target(target)
 
     try:
         runner(
@@ -111,6 +113,25 @@ def clone_public_github_repo(
         },
         "skipped_items": [],
     }
+
+
+def _remove_existing_target(target: Path) -> None:
+    """Remove a previous clone even when Git pack files are read-only on Windows."""
+
+    for root, directories, files in os.walk(target, topdown=False):
+        for name in files:
+            path = Path(root) / name
+            try:
+                path.chmod(stat.S_IWRITE)
+            except OSError:
+                pass
+        for name in directories:
+            path = Path(root) / name
+            try:
+                path.chmod(stat.S_IWRITE)
+            except OSError:
+                pass
+    shutil.rmtree(target)
 
 
 def _format_git_failure(action: str, exc: subprocess.CalledProcessError) -> str:

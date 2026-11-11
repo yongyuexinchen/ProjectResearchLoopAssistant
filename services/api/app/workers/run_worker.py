@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.models import AnalysisRun, Project, RunJob
 from app.db.session import get_worker_session_factory
 from app.engine import langgraph_runner
+from app.services.errors import user_error_message
 from app.services.run_events import record_run_event
 from app.services.run_jobs import claim_next_job, finalize_owned_job, heartbeat_job
 
@@ -93,18 +94,19 @@ def run_one_job(
     except JobLeaseLost:
         return True
     except Exception as exc:
+        error_message = user_error_message(exc)
         with session_factory() as session:
             if not finalize_owned_job(
                 session, job_id=job_id, worker_id=worker_id,
-                attempt_count=job_attempt, status="failed", error=str(exc),
+                attempt_count=job_attempt, status="failed", error=error_message,
             ):
                 return True
             run = require_run(session, run_id)
             project = require_project(session, project_id)
             run.status = "failed"
-            run.stop_reason = str(exc)
+            run.stop_reason = error_message
             project.status = "failed"
-            record_run_event(session, project.id, run.id, "run_failed", {"message": str(exc), "job_id": job_id})
+            record_run_event(session, project.id, run.id, "run_failed", {"message": error_message, "job_id": job_id})
             session.commit()
         return True
 
@@ -186,7 +188,7 @@ def execute_workflow(session, project_id, run_id, thread_id, job_type, payload, 
             raise
         except Exception as exc:
             session.rollback()
-            stage_event(session, project_id, run_id, key, "failed", str(exc))
+            stage_event(session, project_id, run_id, key, "failed", user_error_message(exc))
             session.commit()
             raise
 
